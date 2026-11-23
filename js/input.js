@@ -1,10 +1,12 @@
-const MAX_TILT = 18; // degrees of tilt for full push
-const DEAD = 1.5;    // degrees ignored around neutral
+// Degrees of tilt (beyond the dead zone) needed for full push, per sensitivity setting.
+export const TILT_RANGE = { low: 40, normal: 30, high: 22 };
+const DEAD = 3;      // degrees ignored around neutral (hand shake)
 const JOY_RADIUS = 60;
 
-function shape(d) {
-  const a = Math.max(0, Math.abs(d) - DEAD) / MAX_TILT;
-  return Math.sign(d) * Math.min(1, a);
+// Softer near the centre (power curve) so small tilts give fine control.
+function shape(d, range) {
+  const a = Math.min(1, Math.max(0, Math.abs(d) - DEAD) / range);
+  return Math.sign(d) * Math.pow(a, 1.6);
 }
 
 /**
@@ -23,6 +25,7 @@ export class Input {
     this.tilt = { x: 0, y: 0 };
     this.touch = { x: 0, y: 0 };
     this.listening = false;
+    this.tiltRange = TILT_RANGE.normal;
     this.joyEl = joyEl;
     this.knobEl = knobEl;
 
@@ -102,8 +105,8 @@ export class Input {
     this.tiltSeen = true;
     if (!this.neutral) this.neutral = { b: e.beta, g: e.gamma };
     // gamma > 0: right edge down -> roll right. beta decreasing: top tipped away -> roll forward.
-    this.tiltTarget.x = shape(e.gamma - this.neutral.g);
-    this.tiltTarget.y = shape(-(e.beta - this.neutral.b));
+    this.tiltTarget.x = shape(e.gamma - this.neutral.g, this.tiltRange);
+    this.tiltTarget.y = shape(-(e.beta - this.neutral.b), this.tiltRange);
   }
 
   reset() {
@@ -121,7 +124,7 @@ export class Input {
     if (k.has('ArrowDown') || k.has('KeyS')) y -= 1;
 
     if (this.useTilt) {
-      const a = 1 - Math.exp(-dt * 18); // light smoothing of sensor noise
+      const a = 1 - Math.exp(-dt * 10); // smoothing of sensor noise / hand jitter
       this.tilt.x += (this.tiltTarget.x - this.tilt.x) * a;
       this.tilt.y += (this.tiltTarget.y - this.tilt.y) * a;
       x += this.tilt.x; y += this.tilt.y;

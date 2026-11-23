@@ -3,10 +3,10 @@ import * as THREE from 'three';
 export const BALL_R = 0.4;
 
 const GRAVITY = 22;
-const ACCEL = 14;        // input acceleration while touching ground
-const AIR_ACCEL = 4;     // a little steering while airborne
-const ROLL_DAMP = 0.9;   // rolling resistance (per second, horizontal only)
-const MAX_SPEED = 11;
+const ACCEL = 8;         // input acceleration while touching ground
+const AIR_ACCEL = 3;     // a little steering while airborne
+const ROLL_DAMP = 1.3;   // rolling resistance (per second, horizontal only)
+const MAX_SPEED = 7;
 const BOUNCE = 0.25;
 const BOUNCE_MIN = 4;    // impacts slower than this don't bounce (keeps resting contact stable)
 

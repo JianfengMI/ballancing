@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { Ball, BALL_R } from './physics.js';
 import { TrackBuilder, buildMeshes } from './track.js';
 import { LEVELS } from './levels.js';
-import { Input } from './input.js';
+import { Input, TILT_RANGE } from './input.js';
 import { Minimap } from './minimap.js';
 
 const STEP = 1 / 240;
@@ -18,8 +18,8 @@ const isTouch = window.matchMedia('(pointer: coarse)').matches;
 // ---------- persistence ----------
 const SAVE_KEY = 'beamroller.v1';
 function loadSave() {
-  try { return Object.assign({ unlocked: 1, best: {}, control: 'tilt' }, JSON.parse(localStorage.getItem(SAVE_KEY) || '{}')); }
-  catch { return { unlocked: 1, best: {}, control: 'tilt' }; }
+  try { return Object.assign({ unlocked: 1, best: {}, control: 'tilt', sens: 'normal' }, JSON.parse(localStorage.getItem(SAVE_KEY) || '{}')); }
+  catch { return { unlocked: 1, best: {}, control: 'tilt', sens: 'normal' }; }
 }
 const save = loadSave();
 function persist() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch { /* storage unavailable */ } }
@@ -280,7 +280,10 @@ function renderMenu() {
     show('control-row', true);
     $('ctl-tilt').classList.toggle('on', save.control === 'tilt');
     $('ctl-touch').classList.toggle('on', save.control === 'touch');
+    show('sens-row', save.control === 'tilt');
+    document.querySelectorAll('[data-sens]').forEach((b) => b.classList.toggle('on', b.dataset.sens === save.sens));
   }
+  input.tiltRange = TILT_RANGE[save.sens] || TILT_RANGE.normal;
   $('menu-hint').textContent = !isTouch
     ? 'Arrow keys or WASD to roll. Don’t fall off!'
     : save.control === 'tilt'
@@ -295,6 +298,11 @@ function setControl(mode) {
 }
 $('ctl-tilt').addEventListener('click', () => setControl('tilt'));
 $('ctl-touch').addEventListener('click', () => setControl('touch'));
+document.querySelectorAll('[data-sens]').forEach((b) => b.addEventListener('click', () => {
+  save.sens = b.dataset.sens;
+  persist();
+  renderMenu();
+}));
 
 function configureControls() {
   // Called synchronously from a tap/click so the iOS motion permission prompt is allowed.

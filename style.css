@@ -167,7 +167,8 @@ h2 { margin: 0 0 6px; font-size: 26px; }
 .level-btn.locked { opacity: 0.45; cursor: default; }
 .level-btn.locked .num { background: #444a6e; }
 
-#control-row { display: flex; align-items: center; justify-content: space-between; margin-top: 8px; color: var(--muted); }
+.control-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 8px; color: var(--muted); }
+.control-row .seg { padding: 8px 12px; }
 .seg-group { display: flex; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
 .seg { background: transparent; border-radius: 0; padding: 8px 16px; }
 .seg.on { background: var(--accent); }
