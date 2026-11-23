@@ -3,10 +3,14 @@ import { Ball, BALL_R } from './physics.js';
 import { TrackBuilder, buildMeshes } from './track.js';
 import { LEVELS } from './levels.js';
 import { Input } from './input.js';
+import { Minimap } from './minimap.js';
 
 const STEP = 1 / 240;
-const CAM_DIST = 6.2;
-const CAM_HEIGHT = 4.6;
+// The camera always looks "north" (-Z) and never rotates, so screen-up / tilt-away
+// always means the same direction. Placed fairly high so sideways sections stay readable.
+const CAM_DIST = 5.4;
+const CAM_HEIGHT = 6.4;
+const LOOK_AHEAD = 2.8;
 
 const $ = (id) => document.getElementById(id);
 const isTouch = window.matchMedia('(pointer: coarse)').matches;
@@ -97,6 +101,7 @@ scene.add(ballMesh);
 // ---------- game state ----------
 const ball = new Ball();
 const input = new Input(canvas, $('joystick'), $('joy-knob'));
+const minimap = new Minimap($('minimap'));
 
 let state = 'menu'; // menu | playing | falling | paused | won
 let levelIndex = 0;
@@ -107,8 +112,6 @@ let accum = 0;
 let runTime = 0;
 let falls = 0;
 let fallTimer = 0;
-let camYaw = 0;
-let camTargetYaw = 0;
 let menuAngle = 0;
 let wakeLock = null;
 const camPos = new THREE.Vector3();
@@ -127,6 +130,7 @@ function loadLevel(i) {
   let minY = Infinity;
   for (const s of track.solids) minY = Math.min(minY, s.center.y - s.half.y);
   level = { track, group, checkpointMarkers, goalMarker, minY, movers: track.solids.filter((s) => s.motion) };
+  minimap.setLevel(track);
   resetRun();
 }
 
@@ -146,23 +150,18 @@ function respawn(snapCamera) {
   const sp = cpIndex >= 0 ? level.track.checkpoints[cpIndex] : level.track.spawn;
   ball.reset(sp.pos.clone().add(new THREE.Vector3(0, BALL_R + 0.02, 0)));
   ballMesh.position.copy(ball.pos);
-  camYaw = camTargetYaw = sp.yaw;
   if (snapCamera) placeCamera(1);
 }
 
 // ---------- camera ----------
-function angleLerp(a, b, t) {
-  let d = ((b - a + Math.PI) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2) - Math.PI;
-  return a + d * t;
-}
-
 function placeCamera(t) {
-  const f = new THREE.Vector3(-Math.sin(camYaw), 0, -Math.cos(camYaw));
   const follow = ball.pos.clone();
   follow.y = Math.max(follow.y, level.minY - 2);
-  const want = follow.clone().addScaledVector(f, -CAM_DIST);
+  const want = follow.clone();
+  want.z += CAM_DIST;
   want.y += CAM_HEIGHT;
-  const look = follow.clone().addScaledVector(f, 2.2);
+  const look = follow.clone();
+  look.z -= LOOK_AHEAD;
   camPos.lerp(want, t);
   camLook.lerp(look, t);
   if (t >= 1) { camPos.copy(want); camLook.copy(look); }
@@ -179,8 +178,6 @@ function updateCamera(dt) {
     camPos.copy(camera.position);
     return;
   }
-  if (ball.ground && ball.ground.camYaw !== null) camTargetYaw = ball.ground.camYaw;
-  camYaw = angleLerp(camYaw, camTargetYaw, 1 - Math.exp(-dt * 3.2));
   placeCamera(1 - Math.exp(-dt * 7));
 }
 
@@ -194,9 +191,8 @@ function update(dt) {
   if (ball.ground && ball.ground.motion) ball.pos.add(ball.ground.delta);
 
   const inp = state === 'playing' ? input.get(dt) : { x: 0, y: 0 };
-  const fx = -Math.sin(camYaw), fz = -Math.cos(camYaw);
-  const rx = Math.cos(camYaw), rz = -Math.sin(camYaw);
-  const world = { x: rx * inp.x + fx * inp.y, z: rz * inp.x + fz * inp.y };
+  // Screen-fixed controls: right = +X, forward (up the screen) = -Z.
+  const world = { x: inp.x, z: -inp.y };
 
   accum += dt;
   while (accum >= STEP) {
@@ -452,6 +448,7 @@ function frame(now) {
 
   for (const m of level.checkpointMarkers) m.rotation.y += dt * 1.2;
   if (level.goalMarker) level.goalMarker.rotation.y += dt * 0.8;
+  if (state !== 'menu') minimap.draw(ball.pos, cpIndex);
   scene.userData.sky.position.copy(camera.position);
   scene.userData.stars.position.copy(camera.position);
 

@@ -29,10 +29,10 @@ export class TrackBuilder {
 
   _advance(d) { this.pos.addScaledVector(this.fwd, d); }
 
-  _flat(len, w, kind, { camYaw = this.yaw, h = THICK, lateral = 0, lift = 0, motion = null } = {}) {
+  _flat(len, w, kind, { h = THICK, lateral = 0, lift = 0, motion = null } = {}) {
     const c = this.pos.clone().addScaledVector(this.fwd, len / 2).addScaledVector(this.right, lateral);
     c.y += lift - h / 2;
-    const s = new Solid({ center: c, size: new THREE.Vector3(w, h, len), yaw: this.yaw, camYaw, kind, motion });
+    const s = new Solid({ center: c, size: new THREE.Vector3(w, h, len), yaw: this.yaw, kind, motion });
     this.solids.push(s);
     return s;
   }
@@ -60,7 +60,7 @@ export class TrackBuilder {
     const c = this.pos.clone().addScaledVector(this.fwd, len / 2);
     c.y += rise / 2;
     c.addScaledVector(localUp, -THICK / 2);
-    this.solids.push(new Solid({ center: c, size: new THREE.Vector3(w, THICK, L), yaw: this.yaw, pitch, camYaw: this.yaw, kind: 'beam' }));
+    this.solids.push(new Solid({ center: c, size: new THREE.Vector3(w, THICK, L), yaw: this.yaw, pitch, kind: 'beam' }));
     this._advance(len);
     this.pos.y += rise;
     return this;
@@ -74,7 +74,7 @@ export class TrackBuilder {
 
   /** Square pad, then turn by `deg` (positive = left). */
   corner(size, deg) {
-    this._flat(size, size, 'pad', { camYaw: null });
+    this._flat(size, size, 'pad');
     this._advance(size / 2);
     this.yaw += (deg * Math.PI) / 180;
     this._advance(size / 2);
@@ -160,6 +160,8 @@ export function buildMeshes(track) {
     const geo = new THREE.BoxGeometry(s.half.x * 2, s.half.y * 2, s.half.z * 2);
     const mesh = new THREE.Mesh(geo, mat(s.kind));
     mesh.position.copy(s.center);
+    // Diagonal beams overlap corner pads; sink pads a hair (visual only) to avoid z-fighting.
+    if (s.kind === 'pad') mesh.position.y -= 0.004;
     mesh.quaternion.copy(s.quat);
     mesh.receiveShadow = true;
     mesh.castShadow = s.kind !== 'rail';

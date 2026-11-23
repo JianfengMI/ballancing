@@ -19,14 +19,13 @@ const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 
 /** An oriented box the ball can roll on. Optionally oscillates along an axis. */
 export class Solid {
-  constructor({ center, size, yaw = 0, pitch = 0, camYaw = null, kind = 'beam', motion = null }) {
+  constructor({ center, size, yaw = 0, pitch = 0, kind = 'beam', motion = null }) {
     this.base = center.clone();
     this.center = center.clone();
     this.half = size.clone().multiplyScalar(0.5);
     this.quat = new THREE.Quaternion().setFromEuler(new THREE.Euler(pitch, yaw, 0, 'YXZ'));
     this.inv = this.quat.clone().invert();
     this.radius = this.half.length();
-    this.camYaw = camYaw;   // camera heading while the ball is on this piece (null = keep current)
     this.kind = kind;
     this.motion = motion;   // { axis: Vector3, amp, period, phase }
     this.delta = new THREE.Vector3();
