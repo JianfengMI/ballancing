@@ -7,6 +7,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <title>Beam Roller</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='50' r='42' fill='%23ff4d6d'/%3E%3Cpath d='M50 8a42 42 0 0 1 0 84z' fill='%23f4f4f8'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="style.css">
   <script type="importmap">
     { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js" } }
@@ -18,9 +19,10 @@
   <div id="hud" class="hidden">
     <div class="hud-left">
       <div id="hud-level"></div>
-      <div id="hud-stats"><span id="hud-time">0.0s</span> &middot; <span id="hud-falls">0</span> falls</div>
+      <div id="hud-stats"><span class="gem-icon">&#9670;</span> <span id="hud-gems">0/0</span> &middot; <span id="hud-time">0.0s</span> &middot; <span id="hud-falls">0</span> falls</div>
     </div>
     <div class="hud-right">
+      <button id="btn-mute" class="icon" title="Sound" aria-label="Toggle sound">&#128266;</button>
       <button id="btn-calib" class="icon hidden" title="Recalibrate tilt" aria-label="Recalibrate tilt">&#9678;</button>
       <button id="btn-pause" class="icon" title="Pause" aria-label="Pause">&#10074;&#10074;</button>
     </div>
@@ -28,12 +30,14 @@
   </div>
 
   <div id="toast"></div>
+  <div id="count"></div>
   <div id="joystick" class="hidden"><div id="joy-knob"></div></div>
 
   <div id="menu" class="screen">
     <div class="panel">
       <h1>Beam Roller</h1>
-      <p class="sub">Keep the ball on the beams.</p>
+      <p class="sub">Keep the ball on the beams. Collect gems, beat the clock.</p>
+      <div id="total-stars"></div>
       <div id="level-list"></div>
       <div id="control-row" class="control-row hidden">
         <span>Control</span>
@@ -51,6 +55,7 @@
         </div>
       </div>
       <p class="hint" id="menu-hint"></p>
+      <button id="btn-menu-mute" class="ghost small"></button>
     </div>
   </div>
 
@@ -67,6 +72,8 @@
   <div id="win" class="screen hidden">
     <div class="panel">
       <h2 id="win-title">Level complete!</h2>
+      <div id="win-stars"><span class="star">&#9733;</span><span class="star">&#9733;</span><span class="star">&#9733;</span></div>
+      <ul id="win-goals"></ul>
       <p id="win-stats"></p>
       <button id="btn-next">Next level</button>
       <button id="btn-retry" class="ghost">Play again</button>

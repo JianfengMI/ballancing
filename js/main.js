@@ -1,9 +1,11 @@
 import * as THREE from 'three';
-import { Ball, BALL_R } from './physics.js';
-import { TrackBuilder, buildMeshes } from './track.js';
+import { Ball, BALL_R, MAX_SPEED, surfaceEffects } from './physics.js';
+import { TrackBuilder, buildMeshes, animatedTextures } from './track.js';
 import { LEVELS } from './levels.js';
 import { Input, TILT_RANGE } from './input.js';
 import { Minimap } from './minimap.js';
+import { Sfx, vibrate } from './audio.js';
+import { Particles } from './particles.js';
 
 const STEP = 1 / 240;
 // The camera always looks "north" (-Z) and never rotates, so screen-up / tilt-away
@@ -11,15 +13,26 @@ const STEP = 1 / 240;
 const CAM_DIST = 5.4;
 const CAM_HEIGHT = 6.4;
 const LOOK_AHEAD = 2.8;
+const GEM_RADIUS = 0.7;
+const COMBO_WINDOW = 1.6;   // seconds between gems to keep a combo going
+const COUNTDOWN = 1.8;
 
 const $ = (id) => document.getElementById(id);
 const isTouch = window.matchMedia('(pointer: coarse)').matches;
 
 // ---------- persistence ----------
-const SAVE_KEY = 'beamroller.v1';
+const SAVE_KEY = 'beamroller.v2';
+const DEFAULT_SAVE = { unlocked: 1, best: {}, control: 'tilt', sens: 'normal', muted: false };
 function loadSave() {
-  try { return Object.assign({ unlocked: 1, best: {}, control: 'tilt', sens: 'normal' }, JSON.parse(localStorage.getItem(SAVE_KEY) || '{}')); }
-  catch { return { unlocked: 1, best: {}, control: 'tilt', sens: 'normal' }; }
+  try {
+    const s = Object.assign({}, DEFAULT_SAVE, JSON.parse(localStorage.getItem(SAVE_KEY) || '{}'));
+    if (!localStorage.getItem(SAVE_KEY)) {
+      // carry settings / unlocks over from the first version
+      const old = JSON.parse(localStorage.getItem('beamroller.v1') || 'null');
+      if (old) Object.assign(s, { unlocked: old.unlocked || 1, control: old.control || 'tilt', sens: old.sens || 'normal' });
+    }
+    return s;
+  } catch { return { ...DEFAULT_SAVE, best: {} }; }
 }
 const save = loadSave();
 function persist() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch { /* storage unavailable */ } }
@@ -47,7 +60,8 @@ Object.assign(sun.shadow.camera, { left: -12, right: 12, top: 12, bottom: -12, n
 sun.shadow.bias = -0.0005;
 scene.add(sun, sun.target);
 
-// sky dome with a vertical gradient
+// sky dome with a vertical gradient + stars
+let sky, stars;
 {
   const geo = new THREE.SphereGeometry(200, 32, 16);
   const colors = [];
@@ -60,9 +74,8 @@ scene.add(sun, sun.target);
     colors.push(c.r, c.g, c.b);
   }
   geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
-  const sky = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide, fog: false, depthWrite: false }));
+  sky = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide, fog: false, depthWrite: false }));
   scene.add(sky);
-  scene.userData.sky = sky;
 
   const starGeo = new THREE.BufferGeometry();
   const pts = [];
@@ -71,9 +84,8 @@ scene.add(sun, sun.target);
     pts.push(v.x, v.y, v.z);
   }
   starGeo.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
-  const stars = new THREE.Points(starGeo, new THREE.PointsMaterial({ color: 0xffffff, size: 0.8, fog: false, transparent: true, opacity: 0.8 }));
+  stars = new THREE.Points(starGeo, new THREE.PointsMaterial({ color: 0xffffff, size: 0.8, fog: false, transparent: true, opacity: 0.8 }));
   scene.add(stars);
-  scene.userData.stars = stars;
 }
 
 // ball with a pattern so rolling is visible
@@ -102,16 +114,26 @@ scene.add(ballMesh);
 const ball = new Ball();
 const input = new Input(canvas, $('joystick'), $('joy-knob'));
 const minimap = new Minimap($('minimap'));
+const sfx = new Sfx();
+sfx.muted = !!save.muted;
+const fx = new Particles(scene);
 
-let state = 'menu'; // menu | playing | falling | paused | won
+let state = 'menu'; // menu | countdown | playing | falling | paused | won
+let pausedFrom = 'playing';
 let levelIndex = 0;
-let level = null;   // { track, group, checkpointMarkers, goalMarker, minY, movers }
+let level = null;
 let cpIndex = -1;
 let simTime = 0;
 let accum = 0;
 let runTime = 0;
 let falls = 0;
 let fallTimer = 0;
+let countdown = 0;
+let lastCount = -1;
+let gemsTaken = 0;
+let combo = 0;
+let comboTimer = 0;
+let shake = 0;
 let menuAngle = 0;
 let wakeLock = null;
 const camPos = new THREE.Vector3();
@@ -125,11 +147,15 @@ function loadLevel(i) {
   levelIndex = i;
   const track = new TrackBuilder();
   LEVELS[i].build(track);
-  const { group, checkpointMarkers, goalMarker } = buildMeshes(track);
+  const { group, checkpointMarkers, goalMarker, gems } = buildMeshes(track);
   scene.add(group);
   let minY = Infinity;
   for (const s of track.solids) minY = Math.min(minY, s.center.y - s.half.y);
-  level = { track, group, checkpointMarkers, goalMarker, minY, movers: track.solids.filter((s) => s.motion) };
+  level = {
+    track, group, checkpointMarkers, goalMarker, gems, minY,
+    movers: track.solids.filter((s) => s.motion || s.spin),
+    crumbles: track.solids.filter((s) => s.kind === 'crumble'),
+  };
   minimap.setLevel(track);
   resetRun();
 }
@@ -140,16 +166,30 @@ function resetRun() {
   accum = 0;
   runTime = 0;
   falls = 0;
+  gemsTaken = 0;
+  combo = 0;
   for (const s of level.movers) { s.update(0); s.delta.set(0, 0, 0); }
   for (const m of level.checkpointMarkers) { m.material.color.set(0x40e0d0); m.material.emissive.set(0x1a8a80); }
+  for (const g of level.gems) { g.taken = false; g.mesh.visible = true; }
+  fx.clear();
   respawn(true);
   updateHud();
+}
+
+function resetCrumbles() {
+  for (const s of level.crumbles) {
+    s.resetCrumble();
+    s.mesh.visible = true;
+    s.mesh.position.copy(s.center);
+  }
 }
 
 function respawn(snapCamera) {
   const sp = cpIndex >= 0 ? level.track.checkpoints[cpIndex] : level.track.spawn;
   ball.reset(sp.pos.clone().add(new THREE.Vector3(0, BALL_R + 0.02, 0)));
   ballMesh.position.copy(ball.pos);
+  resetCrumbles();
+  combo = 0;
   if (snapCamera) placeCamera(1);
 }
 
@@ -166,6 +206,10 @@ function placeCamera(t) {
   camLook.lerp(look, t);
   if (t >= 1) { camPos.copy(want); camLook.copy(look); }
   camera.position.copy(camPos);
+  if (shake > 0) {
+    camera.position.x += (Math.random() - 0.5) * shake;
+    camera.position.y += (Math.random() - 0.5) * shake;
+  }
   camera.lookAt(camLook);
 }
 
@@ -178,12 +222,29 @@ function updateCamera(dt) {
     camPos.copy(camera.position);
     return;
   }
+  shake = Math.max(0, shake - dt * 1.5);
   placeCamera(1 - Math.exp(-dt * 7));
 }
 
 // ---------- simulation ----------
 const _q = new THREE.Quaternion();
 const _axis = new THREE.Vector3();
+const _v = new THREE.Vector3();
+
+function handleEvent(ev) {
+  switch (ev) {
+    case 'boost':
+      sfx.boost(); vibrate(20);
+      fx.emit(ball.pos, { count: 18, color: 0x67e8f9, speed: 2.5, up: 1.5, life: 0.5 });
+      break;
+    case 'jump':
+      sfx.jump(); vibrate(25);
+      fx.emit(ball.pos, { count: 22, color: 0xff7be5, speed: 3, up: 1, life: 0.6 });
+      break;
+    case 'crack': sfx.crack(); break;
+    case 'crumble': sfx.crumble(); break;
+  }
+}
 
 function update(dt) {
   simTime += dt;
@@ -199,21 +260,64 @@ function update(dt) {
     ball.step(STEP, world, level.track.solids);
     accum -= STEP;
   }
+  if (state !== 'countdown') for (const ev of surfaceEffects(ball, level.track.solids, dt)) handleEvent(ev);
+
+  // crumble tiles: shake while about to drop, then fall away
+  for (const s of level.crumbles) {
+    if (s.crumbleT === null) continue;
+    s.mesh.position.copy(s.center);
+    if (!s.disabled) {
+      const k = 0.03 + s.crumbleT * 0.06;
+      s.mesh.position.x += (Math.random() - 0.5) * k;
+      s.mesh.position.z += (Math.random() - 0.5) * k;
+    } else if (s.center.y < level.minY - 25) s.mesh.visible = false;
+  }
 
   // visual rolling
-  if (ball.grounded) {
-    const v = ball.vel;
-    const speed = Math.hypot(v.x, v.z);
-    if (speed > 1e-3) {
-      _axis.set(v.z, 0, -v.x).normalize();
-      ballMesh.quaternion.premultiply(_q.setFromAxisAngle(_axis, (speed * dt) / BALL_R));
-    }
+  const speed = Math.hypot(ball.vel.x, ball.vel.z);
+  if (ball.grounded && speed > 1e-3) {
+    _axis.set(ball.vel.z, 0, -ball.vel.x).normalize();
+    ballMesh.quaternion.premultiply(_q.setFromAxisAngle(_axis, (speed * dt) / BALL_R));
   }
   ballMesh.position.copy(ball.pos);
+  sfx.roll(speed, ball.grounded && state !== 'falling');
+
+  // feedback: landings, sweeper hits, speed trail
+  if (ball.impact > 3.5) {
+    sfx.land(ball.impact);
+    if (ball.impact > 6) { shake = Math.max(shake, 0.12); vibrate(15); }
+    _v.copy(ball.pos); _v.y -= BALL_R;
+    fx.emit(_v, { count: Math.min(20, (ball.impact * 2) | 0), color: 0xb8c0ff, speed: 2, up: 1, life: 0.4, gravity: 4 });
+  }
+  ball.impact = 0;
+  if (ball.hit > 0) {
+    sfx.hit(); vibrate(40);
+    shake = Math.max(shake, 0.25);
+    fx.emit(ball.pos, { count: 16, color: 0xff5c7a, speed: 3, up: 1.5, life: 0.4 });
+    ball.hit = 0;
+  }
+  if (speed > MAX_SPEED + 0.5) {
+    fx.emit(ball.pos, { count: 2, color: 0x67e8f9, speed: 0.3, up: 0.2, life: 0.35, gravity: 0, spread: 0.4 });
+  }
 
   if (state === 'playing') {
     runTime += dt;
-    // checkpoints
+    comboTimer -= dt;
+    if (comboTimer <= 0) combo = 0;
+
+    for (const g of level.gems) {
+      if (g.taken || g.pos.distanceTo(ball.pos) > GEM_RADIUS) continue;
+      g.taken = true;
+      g.mesh.visible = false;
+      gemsTaken++;
+      sfx.gem(combo);
+      combo++;
+      comboTimer = COMBO_WINDOW;
+      vibrate(10);
+      fx.emit(g.pos, { count: 14, colors: [0xffd34d, 0xfff3b0, 0xffa94d], speed: 2.2, up: 2.5, life: 0.6 });
+      if (combo >= 3) toast(`Combo x${combo}!`, 700);
+    }
+
     const cps = level.track.checkpoints;
     for (let i = cpIndex + 1; i < cps.length; i++) {
       const p = cps[i].pos;
@@ -222,6 +326,8 @@ function update(dt) {
         const ring = level.checkpointMarkers[i];
         ring.material.color.set(0xffd166);
         ring.material.emissive.set(0x7a5a00);
+        sfx.checkpoint(); vibrate(20);
+        fx.emit(ring.position, { count: 30, color: 0x40e0d0, speed: 3, up: 2, life: 0.8 });
         toast('Checkpoint!');
       }
     }
@@ -230,6 +336,7 @@ function update(dt) {
       state = 'falling';
       falls++;
       fallTimer = 0.9;
+      sfx.fall(); vibrate(80);
       toast('Oops!');
     }
     updateHud();
@@ -237,6 +344,20 @@ function update(dt) {
     fallTimer -= dt;
     if (fallTimer <= 0) {
       respawn(false);
+      state = 'playing';
+    }
+  } else if (state === 'countdown') {
+    countdown -= dt;
+    const n = Math.ceil((countdown / COUNTDOWN) * 3);
+    if (n !== lastCount && n > 0) {
+      lastCount = n;
+      showCount(String(n));
+      sfx.beep(false);
+    }
+    if (countdown <= 0) {
+      if (input.useTilt) input.calibrate();
+      showCount('GO!');
+      sfx.beep(true);
       state = 'playing';
     }
   }
@@ -252,12 +373,25 @@ function toast(text, ms = 1100) {
   toastTimer = setTimeout(() => el.classList.remove('show'), ms);
 }
 
+let countTimer = 0;
+function showCount(text) {
+  const el = $('count');
+  el.textContent = text;
+  el.classList.remove('pop');
+  void el.offsetWidth; // restart the CSS animation
+  el.classList.add('pop');
+  clearTimeout(countTimer);
+  countTimer = setTimeout(() => el.classList.remove('pop'), 600);
+}
+
 function fmt(t) { return `${t.toFixed(1)}s`; }
+function starString(n) { return '★'.repeat(n) + '☆'.repeat(3 - n); }
 
 function updateHud() {
   $('hud-level').textContent = `${levelIndex + 1}. ${LEVELS[levelIndex].name}`;
   $('hud-time').textContent = fmt(runTime);
   $('hud-falls').textContent = falls;
+  $('hud-gems').textContent = `${gemsTaken}/${level.gems.length}`;
 }
 
 function show(id, on) { $(id).classList.toggle('hidden', !on); }
@@ -265,16 +399,20 @@ function show(id, on) { $(id).classList.toggle('hidden', !on); }
 function renderMenu() {
   const list = $('level-list');
   list.innerHTML = '';
+  let total = 0;
   LEVELS.forEach((lv, i) => {
     const b = document.createElement('button');
     const locked = i + 1 > save.unlocked;
+    const rec = save.best[lv.id];
+    total += rec ? rec.stars : 0;
     b.className = 'level-btn' + (locked ? ' locked' : '');
     b.disabled = locked;
-    const best = save.best[i];
-    b.innerHTML = `<span class="num">${i + 1}</span><span class="name">${lv.name}</span><span class="best">${locked ? '🔒' : best ? fmt(best) : ''}</span>`;
+    const right = locked ? '🔒' : rec ? `<span class="stars">${starString(rec.stars)}</span>${fmt(rec.time)}` : '';
+    b.innerHTML = `<span class="num">${i + 1}</span><span class="name">${lv.name}</span><span class="best">${right}</span>`;
     b.addEventListener('click', () => startLevel(i));
     list.appendChild(b);
   });
+  $('total-stars').textContent = `★ ${total} / ${LEVELS.length * 3}`;
 
   if (isTouch) {
     show('control-row', true);
@@ -285,10 +423,11 @@ function renderMenu() {
   }
   input.tiltRange = TILT_RANGE[save.sens] || TILT_RANGE.normal;
   $('menu-hint').textContent = !isTouch
-    ? 'Arrow keys or WASD to roll. Don’t fall off!'
+    ? 'Arrow keys or WASD to roll. Grab gems, beat the clock, don’t fall off!'
     : save.control === 'tilt'
       ? 'Hold your phone comfortably — that angle becomes “level”. Tilt to roll.'
       : 'Drag anywhere on the screen to roll.';
+  updateMuteButtons();
 }
 
 function setControl(mode) {
@@ -303,6 +442,21 @@ document.querySelectorAll('[data-sens]').forEach((b) => b.addEventListener('clic
   persist();
   renderMenu();
 }));
+
+function updateMuteButtons() {
+  const icon = save.muted ? '🔇' : '🔊';
+  $('btn-mute').textContent = icon;
+  $('btn-menu-mute').textContent = `${icon} Sound ${save.muted ? 'off' : 'on'}`;
+}
+function toggleMute() {
+  sfx.unlock();
+  save.muted = !save.muted;
+  sfx.setMuted(save.muted);
+  persist();
+  updateMuteButtons();
+}
+$('btn-mute').addEventListener('click', toggleMute);
+$('btn-menu-mute').addEventListener('click', toggleMute);
 
 function configureControls() {
   // Called synchronously from a tap/click so the iOS motion permission prompt is allowed.
@@ -349,55 +503,88 @@ async function keepAwake() {
   catch { /* ignore */ }
 }
 
+function beginCountdown() {
+  state = 'countdown';
+  countdown = COUNTDOWN;
+  lastCount = -1;
+  input.enabled = true;
+}
+
 function startLevel(i) {
   configureControls();
+  sfx.unlock();
   enterImmersive();
   keepAwake();
   loadLevel(i);
   input.reset();
-  input.enabled = true;
   show('menu', false);
   show('win', false);
   show('pause', false);
   show('hud', true);
-  show('btn-calib', input.useTilt || (isTouch && save.control === 'tilt'));
-  state = 'playing';
-  if (input.useTilt || (isTouch && save.control === 'tilt' && window.isSecureContext)) toast('Tilt to roll', 1300);
+  show('btn-calib', isTouch && save.control === 'tilt');
+  beginCountdown();
 }
 
 function win() {
   state = 'won';
   input.enabled = false;
   input.reset();
-  const prev = save.best[levelIndex];
-  const isBest = !prev || runTime < prev;
-  if (isBest) save.best[levelIndex] = runTime;
+  sfx.roll(0, false);
+  sfx.win();
+  vibrate([30, 60, 30]);
+  fx.emit(ball.pos, { count: 80, colors: [0xff4d6d, 0xffd34d, 0x5dff9e, 0x67e8f9, 0xb084ff], speed: 5, up: 6, life: 1.4, gravity: 9 });
+
+  const lv = LEVELS[levelIndex];
+  const allGems = gemsTaken === level.gems.length;
+  const underPar = runTime <= lv.par;
+  const stars = 1 + (allGems ? 1 : 0) + (underPar ? 1 : 0);
+  const prev = save.best[lv.id];
+  const isBest = !prev || runTime < prev.time;
+  save.best[lv.id] = {
+    time: isBest ? runTime : prev.time,
+    stars: Math.max(stars, prev ? prev.stars : 0),
+  };
   save.unlocked = Math.max(save.unlocked, Math.min(LEVELS.length, levelIndex + 2));
   persist();
+
   const last = levelIndex === LEVELS.length - 1;
-  $('win-title').textContent = last ? 'You beat every level!' : 'Level complete!';
-  $('win-stats').innerHTML = `Time <b>${fmt(runTime)}</b>${isBest ? ' ★ best' : ` (best ${fmt(prev)})`}<br>Falls <b>${falls}</b>`;
+  $('win-title').textContent = last ? 'You beat the Grand Tour!' : 'Level complete!';
+  const goals = [
+    ['Finish', true],
+    [`All gems (${gemsTaken}/${level.gems.length})`, allGems],
+    [`Under ${lv.par}s (${fmt(runTime)})`, underPar],
+  ];
+  $('win-goals').innerHTML = goals.map(([t, ok]) => `<li class="${ok ? 'ok' : ''}">${ok ? '★' : '☆'} ${t}</li>`).join('');
+  $('win-stats').innerHTML = `${isBest && prev ? 'New best time! · ' : ''}Falls <b>${falls}</b>`;
+  const starEls = document.querySelectorAll('#win-stars .star');
+  starEls.forEach((el) => el.classList.remove('lit'));
+  for (let k = 0; k < stars; k++) {
+    setTimeout(() => { starEls[k].classList.add('lit'); sfx.star(k); }, 450 + k * 280);
+  }
   show('btn-next', !last);
   show('hud', false);
-  show('win', true);
+  setTimeout(() => { if (state === 'won') show('win', true); }, 350);
 }
 
 function pause() {
-  if (state !== 'playing' && state !== 'falling') return;
+  if (state !== 'playing' && state !== 'falling' && state !== 'countdown') return;
+  pausedFrom = state;
   state = 'paused';
   input.enabled = false;
   input.reset();
+  sfx.roll(0, false);
   show('pause', true);
 }
 function resume() {
   show('pause', false);
   input.enabled = true;
-  state = 'playing';
+  state = pausedFrom === 'countdown' ? 'countdown' : 'playing';
 }
 function toMenu() {
   state = 'menu';
   input.enabled = false;
   input.reset();
+  sfx.roll(0, false);
   show('pause', false);
   show('win', false);
   show('hud', false);
@@ -410,7 +597,7 @@ function toMenu() {
 
 $('btn-pause').addEventListener('click', pause);
 $('btn-resume').addEventListener('click', resume);
-$('btn-restart').addEventListener('click', () => { show('pause', false); resetRun(); input.enabled = true; state = 'playing'; });
+$('btn-restart').addEventListener('click', () => { show('pause', false); resetRun(); beginCountdown(); });
 $('btn-menu').addEventListener('click', toMenu);
 $('btn-next').addEventListener('click', () => startLevel(levelIndex + 1));
 $('btn-retry').addEventListener('click', () => startLevel(levelIndex));
@@ -418,8 +605,13 @@ $('btn-win-menu').addEventListener('click', toMenu);
 $('btn-calib').addEventListener('click', () => { input.calibrate(); toast('Recalibrated'); });
 $('btn-pause-calib').addEventListener('click', () => { input.calibrate(); toast('Recalibrated'); });
 window.addEventListener('keydown', (e) => {
+  sfx.unlock();
   if (e.code === 'Escape' || e.code === 'KeyP') {
     if (state === 'paused') resume(); else pause();
+  } else if (e.code === 'KeyR' && (state === 'playing' || state === 'falling')) {
+    resetRun(); beginCountdown();
+  } else if ((e.code === 'Enter' || e.code === 'Space') && state === 'won' && levelIndex < LEVELS.length - 1) {
+    startLevel(levelIndex + 1);
   }
 });
 document.addEventListener('visibilitychange', () => {
@@ -442,28 +634,43 @@ window.addEventListener('resize', resize);
 resize();
 
 let last = performance.now();
+let clock = 0;
 function frame(now) {
   requestAnimationFrame(frame);
   const dt = Math.min((now - last) / 1000, 1 / 20);
   last = now;
+  clock += dt;
 
-  if (state === 'playing' || state === 'falling') update(dt);
-  else if (state === 'menu') {
+  if (state === 'playing' || state === 'falling' || state === 'countdown') update(dt);
+  else if (state === 'menu' || state === 'won') {
     simTime += dt;
     for (const s of level.movers) s.update(simTime);
   }
   updateCamera(dt);
+  fx.update(dt);
 
   for (const m of level.checkpointMarkers) m.rotation.y += dt * 1.2;
   if (level.goalMarker) level.goalMarker.rotation.y += dt * 0.8;
+  for (const g of level.gems) {
+    if (!g.taken) {
+      g.mesh.rotation.y += dt * 2.5;
+      g.mesh.position.y = g.pos.y + Math.sin(clock * 3 + g.phase) * 0.08;
+    }
+  }
+  for (const t of animatedTextures) t.offset.y = (t.offset.y - dt * 1.6) % 1;
   if (state !== 'menu') minimap.draw(ball.pos, cpIndex);
-  scene.userData.sky.position.copy(camera.position);
-  scene.userData.stars.position.copy(camera.position);
+  sky.position.copy(camera.position);
+  stars.position.copy(camera.position);
 
   sun.position.copy(ball.pos).add(new THREE.Vector3(6, 14, 5));
   sun.target.position.copy(ball.pos);
 
   renderer.render(scene, camera);
+}
+
+// Test hook (only with ?debug in the URL): lets automated checks reach the results screen.
+if (new URLSearchParams(location.search).has('debug')) {
+  window.__beam = { win: () => win(), collectAll: () => { for (const g of level.gems) { g.taken = true; g.mesh.visible = false; } gemsTaken = level.gems.length; } };
 }
 
 loadLevel(Math.min(save.unlocked, LEVELS.length) - 1);

@@ -4,6 +4,7 @@ import * as THREE from 'three';
 const COLORS = {
   start: '#7d88b8', pad: '#7d88b8', beam: '#7f8cff', rail: '#e3e8f2',
   checkpoint: '#2ad4c4', goal: '#3ee07f', moving: '#ffa94d',
+  boost: '#22d3ee', jump: '#ff4fd8', crumble: '#c8a27a', sweeper: '#ff3b5c', post: '#e8e8f0',
 };
 const PAD = 8;
 const _v = new THREE.Vector3();
@@ -39,7 +40,7 @@ export class Minimap {
     for (const s of track.solids) {
       if (s.motion) {
         for (const k of [-1, 1]) grow(footprint(s, s.base.clone().addScaledVector(s.motion.axis, k * s.motion.amp)));
-      } else grow(footprint(s));
+      } else if (!s.spin) grow(footprint(s));
     }
     const W = this.canvas.width, H = this.canvas.height, p = PAD * dpr;
     this.scale = Math.min((W - 2 * p) / (maxX - minX), (H - 2 * p) / (maxZ - minZ));
@@ -48,7 +49,7 @@ export class Minimap {
 
     const g = this.bg.getContext('2d');
     g.clearRect(0, 0, W, H);
-    for (const s of track.solids) if (!s.motion) this._poly(g, footprint(s), COLORS[s.kind] || COLORS.beam);
+    for (const s of track.solids) if (!s.dynamic) this._poly(g, footprint(s), COLORS[s.kind] || COLORS.beam);
   }
 
   _pt(x, z) { return [this.ox + x * this.scale, this.oz + z * this.scale]; }
@@ -76,7 +77,7 @@ export class Minimap {
     const g = this.ctx;
     g.clearRect(0, 0, this.canvas.width, this.canvas.height);
     g.drawImage(this.bg, 0, 0);
-    for (const s of this.track.solids) if (s.motion) this._poly(g, footprint(s), COLORS.moving);
+    for (const s of this.track.solids) if (s.dynamic && !s.disabled) this._poly(g, footprint(s), COLORS[s.kind] || COLORS.moving);
     this.track.checkpoints.forEach((cp, i) => this._dot(cp.pos.x, cp.pos.z, 3, i <= cpIndex ? '#ffd166' : '#40e0d0'));
     this._dot(ballPos.x, ballPos.z, 4, '#ff4d6d', '#ffffff');
   }

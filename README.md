@@ -4,8 +4,13 @@ A 3D ball-balancing game in the browser (Three.js). Roll the ball along floating
 
 **Play:** https://jianfengmi.github.io/ballancing/
 
+## Gameplay
+- 9 levels. Each awards up to 3 stars: finish, collect every gem, and beat the target time.
+- Track pieces: beams, rails, ramps, gaps, boost strips, jump pads, crumbling tiles, rotating sweeper arms, sliding platforms and lifts.
+- Gem combos, sound effects (synthesised, no audio files), particles, camera shake and vibration (Android).
+
 ## Controls
-- **Desktop:** arrow keys or WASD. `Esc`/`P` pauses.
+- **Desktop:** arrow keys or WASD. `Esc`/`P` pauses, `R` restarts, `Enter` goes to the next level after a win.
 - **Phone (portrait):** tilt the phone. The angle you hold it at when a level starts is treated as level; use the recalibrate button (top right) to reset it. You can switch to touch-drag in the menu.
 
 Tilt controls require HTTPS (GitHub Pages provides it). On iPhone, allow motion access when asked.
@@ -14,8 +19,11 @@ Tilt controls require HTTPS (GitHub Pages provides it). On iPhone, allow motion 
 Serve the folder with any static server, e.g. `npx http-server -c-1`, then open http://localhost:8080.
 
 ## Code
-- `js/physics.js` - ball and sphere-vs-box collision physics
+- `js/physics.js` - ball physics, sphere-vs-box collisions, special surfaces (boost, jump, crumble, sweepers)
 - `js/track.js` - track builder (straight, ramp, corner, rails, gaps, moving platforms) and meshes
 - `js/levels.js` - level definitions
 - `js/input.js` - keyboard, tilt and touch input
 - `js/main.js` - scene, camera, game loop and UI
+- `js/minimap.js` - top-down track map
+- `js/audio.js` - synthesised sound effects
+- `js/particles.js` - sparkles, dust and confetti
