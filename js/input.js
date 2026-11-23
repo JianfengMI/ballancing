@@ -1,12 +1,12 @@
 // Degrees of tilt (beyond the dead zone) needed for full push, per sensitivity setting.
-export const TILT_RANGE = { low: 40, normal: 30, high: 22 };
-const DEAD = 3;      // degrees ignored around neutral (hand shake)
+export const TILT_RANGE = { low: 32, normal: 24, high: 17 };
+const DEAD = 2.5;    // degrees ignored around neutral (hand shake)
 const JOY_RADIUS = 60;
 
 // Softer near the centre (power curve) so small tilts give fine control.
 function shape(d, range) {
   const a = Math.min(1, Math.max(0, Math.abs(d) - DEAD) / range);
-  return Math.sign(d) * Math.pow(a, 1.6);
+  return Math.sign(d) * Math.pow(a, 1.4);
 }
 
 /**
