@@ -3,11 +3,11 @@ import * as THREE from 'three';
 export const BALL_R = 0.4;
 
 const GRAVITY = 22;
-const ACCEL = 8;          // input acceleration while touching ground
+const ACCEL = 10;        // input acceleration while touching ground
 const AIR_ACCEL = 3;      // a little steering while airborne
-const ROLL_DAMP = 1.3;    // rolling resistance (per second, horizontal only)
+const ROLL_DAMP = 1.1;   // rolling resistance (per second, horizontal only)
 const OVER_DAMP = 1.6;    // extra drag while faster than MAX_SPEED (after a boost)
-export const MAX_SPEED = 7;   // fastest you can go by tilting alone
+export const MAX_SPEED = 8.5; // fastest you can go by tilting alone
 const HARD_MAX = 16;
 const BOUNCE = 0.25;
 const BOUNCE_MIN = 4;     // impacts slower than this don't bounce (keeps resting contact stable)

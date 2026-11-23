@@ -8,7 +8,7 @@ export const LEVELS = [
   {
     id: 'first-roll',
     name: 'First Roll',
-    par: 20,
+    par: 17,
     build: (b) => b
       .start(4)
       .straight(9, 2.6, { gems: 3, zig: 0.7 })
@@ -27,7 +27,7 @@ export const LEVELS = [
   {
     id: 'narrow-path',
     name: 'Narrow Path',
-    par: 25,
+    par: 22,
     build: (b) => b
       .start(4)
       .straight(6, 1.8, { gems: 2 })
@@ -50,7 +50,7 @@ export const LEVELS = [
   {
     id: 'launch-pad',
     name: 'Launch Pad',
-    par: 30,
+    par: 26,
     build: (b) => b
       .start(4)
       .straight(6, 2.2, { gems: 2 })
@@ -76,7 +76,7 @@ export const LEVELS = [
   {
     id: 'on-the-rails',
     name: 'On the Rails',
-    par: 27,
+    par: 24,
     build: (b) => b
       .start(4)
       .straight(4, 1.8, { gems: 2 })
@@ -98,7 +98,7 @@ export const LEVELS = [
   {
     id: 'crumble-bridge',
     name: 'Crumble Bridge',
-    par: 23,
+    par: 20,
     build: (b) => b
       .start(4)
       .straight(5, 2, { gems: 2 })
@@ -120,7 +120,7 @@ export const LEVELS = [
   {
     id: 'leap-of-faith',
     name: 'Leap of Faith',
-    par: 28,
+    par: 25,
     build: (b) => b
       .start(4)
       .straight(7, 1.8, { gems: 2 })
@@ -150,7 +150,7 @@ export const LEVELS = [
   {
     id: 'sweepers',
     name: 'Sweepers',
-    par: 26,
+    par: 24,
     build: (b) => b
       .start(4)
       .straight(5, 2.2, { gems: 2 })
@@ -171,7 +171,7 @@ export const LEVELS = [
   {
     id: 'moving-parts',
     name: 'Moving Parts',
-    par: 42,
+    par: 37,
     build: (b) => b
       .start(4)
       .straight(5, 1.4, { gems: 2 })
@@ -194,7 +194,7 @@ export const LEVELS = [
   {
     id: 'grand-tour',
     name: 'Grand Tour',
-    par: 45,
+    par: 40,
     build: (b) => b
       .start(4)
       .straight(4, 2, { gems: 2 })
