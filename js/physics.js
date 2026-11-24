@@ -3,18 +3,24 @@ import * as THREE from 'three';
 export const BALL_R = 0.4;
 
 const GRAVITY = 22;
-const ACCEL = 10;        // input acceleration while touching ground
-const AIR_ACCEL = 3;      // a little steering while airborne
-const ROLL_DAMP = 1.1;   // rolling resistance (per second, horizontal only)
-const OVER_DAMP = 1.6;    // extra drag while faster than MAX_SPEED (after a boost)
 export const MAX_SPEED = 8.5; // fastest you can go by tilting alone
 const HARD_MAX = 16;
-const BOUNCE = 0.25;
-const BOUNCE_MIN = 4;     // impacts slower than this don't bounce (keeps resting contact stable)
+
+// Per-ball feel; the ball's material (see materials.js) overrides these. Defaults = wood.
+const DEFAULT_MAT = {
+  accel: 10,       // input acceleration while touching ground
+  airAccel: 3,     // a little steering while airborne
+  rollDamp: 1.1,   // rolling resistance (per second, horizontal only)
+  overDamp: 1.6,   // extra drag while faster than MAX_SPEED (after a boost)
+  bounce: 0.25,
+  bounceMin: 4,    // impacts slower than this don't bounce (keeps resting contact stable)
+  knock: 1,        // sweeper knock-back multiplier
+  crumble: 0.7,    // seconds after first touch before a crumble tile drops
+  flutter: 0,      // random sideways drift (paper)
+};
 
 const BOOST_ACC = 34;
 const BOOST_MAX = 13;
-const CRUMBLE_DELAY = 0.7;   // seconds after first touch before a crumble tile drops
 const SWEEP_BOUNCE = 0.6;
 const SWEEP_KICK = 2;
 
@@ -121,7 +127,11 @@ export class Ball {
     this.prevGroundKind = null;
     this.impact = 0;   // strongest landing speed since last read (for sound / shake)
     this.hit = 0;      // strongest sweeper hit since last read
+    this.mat = DEFAULT_MAT;
+    this.flutterT = 0;
   }
+
+  setMaterial(m) { this.mat = { ...DEFAULT_MAT, ...m }; }
 
   reset(p) {
     this.pos.copy(p);
@@ -137,18 +147,26 @@ export class Ball {
   /** input: world-space {x, z}, length <= 1 */
   step(dt, input, solids) {
     const v = this.vel;
+    const m = this.mat;
     v.y -= GRAVITY * dt;
+
+    if (m.flutter) {
+      // smooth, wandering sideways push: a couple of incommensurate sines
+      const t = (this.flutterT += dt);
+      v.x += m.flutter * (Math.sin(t * 1.3) + 0.6 * Math.sin(t * 3.1 + 1)) * 0.62 * dt;
+      v.z += m.flutter * (Math.sin(t * 0.9 + 2) + 0.6 * Math.sin(t * 2.3 + 4)) * 0.62 * dt;
+    }
 
     // Tilting can only accelerate you up to MAX_SPEED; faster (boosted) speed bleeds off.
     const hs0 = Math.hypot(v.x, v.z);
-    const a = this.grounded ? ACCEL : AIR_ACCEL;
+    const a = this.grounded ? m.accel : m.airAccel;
     v.x += input.x * a * dt;
     v.z += input.z * a * dt;
     let hs = Math.hypot(v.x, v.z);
     const cap = Math.min(HARD_MAX, Math.max(MAX_SPEED, hs0));
     if (hs > cap) { v.x *= cap / hs; v.z *= cap / hs; hs = cap; }
     if (this.grounded) {
-      const k = Math.max(0, 1 - (ROLL_DAMP + (hs > MAX_SPEED ? OVER_DAMP : 0)) * dt);
+      const k = Math.max(0, 1 - (m.rollDamp + (hs > MAX_SPEED ? m.overDamp : 0)) * dt);
       v.x *= k;
       v.z *= k;
     }
@@ -172,15 +190,16 @@ export class Ball {
         const vpx = s.spin * rz, vpz = -s.spin * rx;
         const rel = (v.x - vpx) * _n.x + v.y * _n.y + (v.z - vpz) * _n.z;
         if (rel < 0) {
-          v.addScaledVector(_n, -(1 + SWEEP_BOUNCE) * rel + SWEEP_KICK);
-          this.hit = Math.max(this.hit, -rel + SWEEP_KICK);
+          // heavy balls get shoved along, light ones go flying; never less than stopping at the arm
+          v.addScaledVector(_n, Math.max(-rel, (-(1 + SWEEP_BOUNCE) * rel + SWEEP_KICK) * m.knock));
+          this.hit = Math.max(this.hit, (-rel + SWEEP_KICK) * m.knock);
         }
         continue;
       }
 
       const vn = v.dot(_n);
       if (vn < 0) {
-        const e = vn < -BOUNCE_MIN ? BOUNCE : 0;
+        const e = vn < -m.bounceMin ? m.bounce : 0;
         v.addScaledVector(_n, -(1 + e) * vn);
       }
       if (_n.y > 0.55) {
@@ -227,10 +246,9 @@ export function surfaceEffects(ball, solids, dt) {
       continue;
     }
     s.crumbleT += dt;
-    if (!s.disabled && s.crumbleT > CRUMBLE_DELAY) { s.disabled = true; events.push('crumble'); }
+    if (!s.disabled && s.crumbleT > ball.mat.crumble) { s.disabled = true; events.push('crumble'); }
     if (s.disabled) { s.fallV += GRAVITY * dt; s.center.y -= s.fallV * dt; }
   }
   return events;
 }
 
-export const CRUMBLE_WARN = CRUMBLE_DELAY;

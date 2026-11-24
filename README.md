@@ -6,6 +6,11 @@ A 3D ball-balancing game in the browser (Three.js). Roll the ball along floating
 
 ## Gameplay
 - 9 levels. Each awards up to 3 stars: finish, collect every gem, and beat the target time.
+- The ball changes material as the levels get harder, and each one handles differently:
+  - **Wood** (levels 1-2): steady and easy to steer.
+  - **Rock** (3-4): heavy, slower to get going and keeps rolling when you let go.
+  - **Iron** (5-6): very heavy, hard to stop, barely moved by sweepers, makes crumbling tiles fall sooner.
+  - **Paper** (7-9): light and twitchy, bouncy, knocked far by sweepers, drifts in the breeze.
 - Track pieces: beams, rails, ramps, gaps, boost strips, jump pads, crumbling tiles, rotating sweeper arms, sliding platforms and lifts.
 - Gem combos, sound effects (synthesised, no audio files), particles, camera shake and vibration (Android).
 
@@ -21,7 +26,8 @@ Serve the folder with any static server, e.g. `npx http-server -c-1`, then open 
 ## Code
 - `js/physics.js` - ball physics, sphere-vs-box collisions, special surfaces (boost, jump, crumble, sweepers)
 - `js/track.js` - track builder (straight, ramp, corner, rails, gaps, moving platforms) and meshes
-- `js/levels.js` - level definitions
+- `js/levels.js` - level definitions (including which ball each level uses)
+- `js/materials.js` - ball materials: handling settings, textures and sounds
 - `js/input.js` - keyboard, tilt and touch input
 - `js/main.js` - scene, camera, game loop and UI
 - `js/minimap.js` - top-down track map

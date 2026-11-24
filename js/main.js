@@ -6,6 +6,7 @@ import { Input, TILT_RANGE } from './input.js';
 import { Minimap } from './minimap.js';
 import { Sfx, vibrate } from './audio.js';
 import { Particles } from './particles.js';
+import { MATERIALS, ballLook } from './materials.js';
 
 const STEP = 1 / 240;
 // The camera always looks "north" (-Z) and never rotates, so screen-up / tilt-away
@@ -88,25 +89,8 @@ let sky, stars;
   scene.add(stars);
 }
 
-// ball with a pattern so rolling is visible
-function ballTexture() {
-  const c = document.createElement('canvas');
-  c.width = 256; c.height = 128;
-  const g = c.getContext('2d');
-  for (let y = 0; y < 4; y++) {
-    for (let x = 0; x < 8; x++) {
-      g.fillStyle = (x + y) % 2 ? '#f4f4f8' : '#ff4d6d';
-      g.fillRect(x * 32, y * 32, 32, 32);
-    }
-  }
-  const t = new THREE.CanvasTexture(c);
-  t.colorSpace = THREE.SRGBColorSpace;
-  return t;
-}
-const ballMesh = new THREE.Mesh(
-  new THREE.SphereGeometry(BALL_R, 32, 24),
-  new THREE.MeshStandardMaterial({ map: ballTexture(), roughness: 0.35, metalness: 0.05 })
-);
+// The ball's look (and feel) changes per level: wood, rock, iron, paper. See materials.js.
+const ballMesh = new THREE.Mesh();
 ballMesh.castShadow = true;
 scene.add(ballMesh);
 
@@ -135,6 +119,7 @@ let combo = 0;
 let comboTimer = 0;
 let shake = 0;
 let menuAngle = 0;
+let mat = MATERIALS.wood;
 let wakeLock = null;
 const camPos = new THREE.Vector3();
 const camLook = new THREE.Vector3();
@@ -145,6 +130,12 @@ function loadLevel(i) {
     level.group.traverse((o) => { if (o.geometry) o.geometry.dispose(); });
   }
   levelIndex = i;
+  mat = MATERIALS[LEVELS[i].ball] || MATERIALS.wood;
+  const look = ballLook(LEVELS[i].ball, renderer);
+  ballMesh.geometry = look.geometry;
+  ballMesh.material = look.material;
+  ball.setMaterial(mat);
+  sfx.setMaterial(mat.sound);
   const track = new TrackBuilder();
   LEVELS[i].build(track);
   const { group, checkpointMarkers, goalMarker, gems } = buildMeshes(track);
@@ -287,13 +278,13 @@ function update(dt) {
     sfx.land(ball.impact);
     if (ball.impact > 6) { shake = Math.max(shake, 0.12); vibrate(15); }
     _v.copy(ball.pos); _v.y -= BALL_R;
-    fx.emit(_v, { count: Math.min(20, (ball.impact * 2) | 0), color: 0xb8c0ff, speed: 2, up: 1, life: 0.4, gravity: 4 });
+    fx.emit(_v, { count: Math.min(20, (ball.impact * 2) | 0), color: mat.dust, speed: 2, up: 1, life: 0.4, gravity: 4 });
   }
   ball.impact = 0;
   if (ball.hit > 0) {
     sfx.hit(); vibrate(40);
     shake = Math.max(shake, 0.25);
-    fx.emit(ball.pos, { count: 16, color: 0xff5c7a, speed: 3, up: 1.5, life: 0.4 });
+    fx.emit(ball.pos, { count: 16, color: mat === MATERIALS.iron ? 0xffb347 : 0xff5c7a, speed: 3, up: 1.5, life: 0.4 });
     ball.hit = 0;
   }
   if (speed > MAX_SPEED + 0.5) {
@@ -388,7 +379,7 @@ function fmt(t) { return `${t.toFixed(1)}s`; }
 function starString(n) { return '★'.repeat(n) + '☆'.repeat(3 - n); }
 
 function updateHud() {
-  $('hud-level').textContent = `${levelIndex + 1}. ${LEVELS[levelIndex].name}`;
+  $('hud-level').textContent = `${levelIndex + 1}. ${LEVELS[levelIndex].name} · ${mat.icon} ${mat.name}`;
   $('hud-time').textContent = fmt(runTime);
   $('hud-falls').textContent = falls;
   $('hud-gems').textContent = `${gemsTaken}/${level.gems.length}`;
@@ -408,7 +399,8 @@ function renderMenu() {
     b.className = 'level-btn' + (locked ? ' locked' : '');
     b.disabled = locked;
     const right = locked ? '🔒' : rec ? `<span class="stars">${starString(rec.stars)}</span>${fmt(rec.time)}` : '';
-    b.innerHTML = `<span class="num">${i + 1}</span><span class="name">${lv.name}</span><span class="best">${right}</span>`;
+    const m = MATERIALS[lv.ball] || MATERIALS.wood;
+    b.innerHTML = `<span class="num">${i + 1}</span><span class="name">${lv.name}<span class="mat" title="${m.name} ball">${m.icon} ${m.name}</span></span><span class="best">${right}</span>`;
     b.addEventListener('click', () => startLevel(i));
     list.appendChild(b);
   });
@@ -522,6 +514,9 @@ function startLevel(i) {
   show('pause', false);
   show('hud', true);
   show('btn-calib', isTouch && save.control === 'tilt');
+  // announce the ball when it changes from the previous level (or on the first level)
+  const prevBall = i > 0 ? LEVELS[i - 1].ball : null;
+  if (prevBall !== LEVELS[i].ball || i === 0) toast(`${mat.icon} ${mat.hint}`, 2600);
   beginCountdown();
 }
 

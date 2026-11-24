@@ -5,6 +5,13 @@ export class Sfx {
   constructor() {
     this.ctx = null;
     this.muted = false;
+    this.mat = { rollBase: 220, rollRange: 520, rollGain: 0.5, rollType: 'lowpass', landFreq: 180, landType: 'triangle', ring: 0 };
+  }
+
+  /** Ball material sound settings (see materials.js). */
+  setMaterial(snd) {
+    this.mat = snd;
+    if (this.rollFilter) this.rollFilter.type = snd.rollType;
   }
 
   /** Call from a user gesture (tap/click/key) so mobile browsers allow audio. */
@@ -45,7 +52,8 @@ export class Sfx {
     src.buffer = this._noiseBuf;
     src.loop = true;
     this.rollFilter = this.ctx.createBiquadFilter();
-    this.rollFilter.type = 'lowpass';
+    this.rollFilter.type = this.mat.rollType;
+    this.rollFilter.Q.value = 0.7;
     this.rollFilter.frequency.value = 300;
     this.rollGain = this.ctx.createGain();
     this.rollGain.gain.value = 0;
@@ -58,8 +66,9 @@ export class Sfx {
     if (!this.ctx) return;
     const t = this.ctx.currentTime;
     const s = Math.min(speed / 8, 1.5);
-    this.rollGain.gain.setTargetAtTime(grounded ? 0.5 * s : 0, t, 0.05);
-    this.rollFilter.frequency.setTargetAtTime(180 + s * 500, t, 0.05);
+    const m = this.mat;
+    this.rollGain.gain.setTargetAtTime(grounded ? m.rollGain * s : 0, t, 0.05);
+    this.rollFilter.frequency.setTargetAtTime(m.rollBase + s * m.rollRange, t, 0.05);
   }
 
   _tone(freq, { at = 0, dur = 0.15, type = 'sine', gain = 0.25, slide = null, attack = 0.005 } = {}) {
@@ -115,8 +124,13 @@ export class Sfx {
 
   land(strength) {
     const g = Math.min(0.5, 0.06 * strength);
-    this._tone(110, { dur: 0.12, type: 'sine', gain: g, slide: 55 });
-    this._noise({ dur: 0.08, gain: g * 0.6, type: 'lowpass', freq: 600 });
+    const m = this.mat;
+    this._tone(m.landFreq, { dur: 0.12, type: m.landType, gain: g, slide: m.landFreq / 2 });
+    this._noise({ dur: 0.08, gain: g * 0.6, type: 'lowpass', freq: m.landFreq * 5 });
+    if (m.ring) {
+      // metallic clang: inharmonic partials that ring out
+      [523, 1397, 2311].forEach((f, i) => this._tone(f, { dur: 0.5 - i * 0.1, type: 'sine', gain: g * (0.35 - i * 0.08) }));
+    }
   }
 
   boost() {

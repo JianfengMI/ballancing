@@ -2,11 +2,13 @@
 // The camera never rotates, so every level keeps heading "up the screen":
 // the running heading always stays within -90..+90 degrees (no doubling back).
 // `par` is the target time (seconds) for the third star.
+// `ball` is the ball material (see materials.js): wood -> rock -> iron -> paper, easy to hard.
 const PI = Math.PI;
 
 export const LEVELS = [
   {
     id: 'first-roll',
+    ball: 'wood',
     name: 'First Roll',
     par: 17,
     build: (b) => b
@@ -26,6 +28,7 @@ export const LEVELS = [
   },
   {
     id: 'narrow-path',
+    ball: 'wood',
     name: 'Narrow Path',
     par: 22,
     build: (b) => b
@@ -49,6 +52,7 @@ export const LEVELS = [
   },
   {
     id: 'launch-pad',
+    ball: 'rock',
     name: 'Launch Pad',
     par: 26,
     build: (b) => b
@@ -75,6 +79,7 @@ export const LEVELS = [
   },
   {
     id: 'on-the-rails',
+    ball: 'rock',
     name: 'On the Rails',
     par: 24,
     build: (b) => b
@@ -97,6 +102,7 @@ export const LEVELS = [
   },
   {
     id: 'crumble-bridge',
+    ball: 'iron',
     name: 'Crumble Bridge',
     par: 20,
     build: (b) => b
@@ -119,6 +125,7 @@ export const LEVELS = [
   },
   {
     id: 'leap-of-faith',
+    ball: 'iron',
     name: 'Leap of Faith',
     par: 25,
     build: (b) => b
@@ -149,6 +156,7 @@ export const LEVELS = [
   },
   {
     id: 'sweepers',
+    ball: 'paper',
     name: 'Sweepers',
     par: 24,
     build: (b) => b
@@ -170,6 +178,7 @@ export const LEVELS = [
   },
   {
     id: 'moving-parts',
+    ball: 'paper',
     name: 'Moving Parts',
     par: 37,
     build: (b) => b
@@ -193,6 +202,7 @@ export const LEVELS = [
   },
   {
     id: 'grand-tour',
+    ball: 'paper',
     name: 'Grand Tour',
     par: 40,
     build: (b) => b

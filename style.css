@@ -86,10 +86,9 @@ button.icon {
   opacity: 0;
   transition: opacity 0.2s, transform 0.2s;
   pointer-events: none;
-  white-space: nowrap;
+  width: max-content;
   max-width: calc(100vw - 32px);
-  overflow: hidden;
-  text-overflow: ellipsis;
+  text-align: center;
 }
 #toast.show { opacity: 1; transform: translate(-50%, 0); }
 
@@ -164,6 +163,7 @@ h2 { margin: 0 0 6px; font-size: 26px; }
   font-weight: 700;
 }
 .level-btn .best { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
+.level-btn .mat { display: block; color: var(--muted); font-size: 12px; font-weight: 400; margin-top: 1px; }
 .level-btn.locked { opacity: 0.45; cursor: default; }
 .level-btn.locked .num { background: #444a6e; }
 
