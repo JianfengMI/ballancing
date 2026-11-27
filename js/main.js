@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { Ball, BALL_R, MAX_SPEED, surfaceEffects } from './physics.js';
-import { TrackBuilder, buildMeshes, animatedTextures } from './track.js';
+import { TrackBuilder, buildMeshes, disposeMeshes, animatedTextures } from './track.js';
 import { LEVELS } from './levels.js';
 import { Input, TILT_RANGE } from './input.js';
 import { Minimap } from './minimap.js';
@@ -163,7 +163,7 @@ function streakCount() {
 function loadLevel(which) {
   if (level) {
     scene.remove(level.group);
-    level.group.traverse((o) => { if (o.geometry) o.geometry.dispose(); });
+    disposeMeshes(level.group);
   }
   if (typeof which === 'number') { levelIndex = which; def = LEVELS[which]; } else def = which;
   mat = MATERIALS[def.ball] || MATERIALS.wood;

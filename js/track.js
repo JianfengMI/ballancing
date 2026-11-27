@@ -341,6 +341,25 @@ function boostMaterials(s) {
   return [side, side, top, side, side, side];
 }
 
+/**
+ * Frees a level's GPU resources: every geometry, plus the per-level materials and
+ * their textures. Materials from the shared caches are kept for the next level.
+ */
+export function disposeMeshes(group) {
+  const shared = new Set([...Object.values(materialCache), ...Object.values(edgeMatCache)]);
+  const mats = new Set();
+  group.traverse((o) => {
+    if (o.geometry) o.geometry.dispose();
+    if (o.material) for (const m of [].concat(o.material)) if (!shared.has(m)) mats.add(m);
+  });
+  const texs = new Set();
+  for (const m of mats) {
+    for (const v of Object.values(m)) if (v && v.isTexture) texs.add(v);
+    m.dispose();
+  }
+  for (const t of texs) t.dispose();
+}
+
 /** Builds a THREE.Group for the level. */
 export function buildMeshes(track) {
   animatedTextures.length = 0;
