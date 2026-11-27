@@ -1,6 +1,7 @@
 // Each level is a short script for the TrackBuilder. Positive corner angle = turn left.
 // The camera never rotates, so every level keeps heading "up the screen":
 // the running heading always stays within -90..+90 degrees (no doubling back).
+// `.guarded()` adds walls on the outside of every corner after it (used on the easy levels).
 // `par` is the target time (seconds) for the third star.
 // `ball` is the ball material (see materials.js): wood -> rock -> iron -> paper, easy to hard.
 const PI = Math.PI;
@@ -12,6 +13,7 @@ export const LEVELS = [
     name: 'First Roll',
     par: 17,
     build: (b) => b
+      .guarded()
       .start(4)
       .straight(9, 2.6, { gems: 3, zig: 0.7 })
       .corner(3, -45, { gem: true })
@@ -32,6 +34,7 @@ export const LEVELS = [
     name: 'Narrow Path',
     par: 22,
     build: (b) => b
+      .guarded()
       .start(4)
       .straight(6, 1.8, { gems: 2 })
       .straight(5, 1.3, { gems: 2, zig: 0.35 })
@@ -56,6 +59,7 @@ export const LEVELS = [
     name: 'Launch Pad',
     par: 26,
     build: (b) => b
+      .guarded()
       .start(4)
       .straight(6, 2.2, { gems: 2 })
       .boost(4, 2.2)
@@ -83,6 +87,7 @@ export const LEVELS = [
     name: 'On the Rails',
     par: 24,
     build: (b) => b
+      .guarded()
       .start(4)
       .straight(4, 1.8, { gems: 2 })
       .rails(8, { gems: 3 })

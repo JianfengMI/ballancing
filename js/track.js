@@ -9,6 +9,8 @@ const RAIL_GAP = 0.5;    // rail centre-to-centre distance
 // (it sits lower between two rails), halving the bump at each transition.
 const INNER = (RAIL_GAP - RAIL) / 2;
 const RAIL_LIFT = (BALL_R - Math.sqrt(BALL_R * BALL_R - INNER * INNER)) / 2;
+const GUARD_T = 0.14;    // corner guard wall thickness
+const GUARD_H = 0.45;    // ...and height above the pad
 const GEM_H = BALL_R + 0.05;   // gems float at ball-centre height
 const G = 22;
 
@@ -27,7 +29,12 @@ export class TrackBuilder {
     this.markers = [];
     this.gems = [];
     this.spawn = null;
+    this.guardCorners = false;
+    this._guards = [];
   }
+
+  /** From here on, corners get low walls on their outer side so the ball can't overshoot. */
+  guarded(on = true) { this.guardCorners = on; return this; }
 
   get fwd() { return new THREE.Vector3(-Math.sin(this.yaw), 0, -Math.cos(this.yaw)); }
   get right() { return new THREE.Vector3(Math.cos(this.yaw), 0, -Math.sin(this.yaw)); }
@@ -99,7 +106,10 @@ export class TrackBuilder {
 
   /** Square pad, then turn by `deg` (positive = left). opts.gem puts a gem in the middle. */
   corner(size, deg, opts = {}) {
+    const center = this.pos.clone().addScaledVector(this.fwd, size / 2);
     this._flat(size, size, 'pad');
+    const guard = opts.guard ?? this.guardCorners;
+    if (guard && deg) this._guards.push({ center, size, deg, yawIn: this.yaw, next: this.solids.length });
     this._advance(size / 2);
     if (opts.gem) this.gem();
     this.yaw += (deg * Math.PI) / 180;
@@ -118,11 +128,61 @@ export class TrackBuilder {
   }
 
   goal(size = 4) {
+    this._buildGuards();
     this._flat(size, size, 'goal');
     this._advance(size / 2);
     this.markers.push({ type: 'goal', pos: this.pos.clone(), yaw: this.yaw });
     this._advance(size / 2);
     return this;
+  }
+
+  /**
+   * Guard walls for corners, built once the piece after each corner is known (so the
+   * walls leave its whole width open). Walls: the pad's outer side, its far edge up to
+   * the exit path, and for angled turns a short rail along the exit's outer edge.
+   */
+  _buildGuards() {
+    for (const g of this._guards) {
+      const exit = this.solids[g.next];
+      if (!exit) continue;
+      // keep at least a ball's width (plus a margin) clear, even on narrow exits and rails
+      const w = Math.max(exit.kind === 'rail' ? RAIL_GAP + RAIL : exit.half.x * 2, 2 * BALL_R + 0.3);
+      const s = g.size, half = s / 2, T = GUARD_T;
+      const o = Math.sign(g.deg);                     // left turn -> outer side is to the right
+      const yawOut = g.yawIn + (g.deg * Math.PI) / 180;
+      const f = new THREE.Vector3(-Math.sin(g.yawIn), 0, -Math.cos(g.yawIn));
+      const side = new THREE.Vector3(Math.cos(g.yawIn), 0, -Math.sin(g.yawIn)).multiplyScalar(o);
+      const d = new THREE.Vector3(-Math.sin(yawOut), 0, -Math.cos(yawOut));
+      const sideOut = new THREE.Vector3(Math.cos(yawOut), 0, -Math.sin(yawOut)).multiplyScalar(o);
+      const y = g.center.y + GUARD_H / 2;
+      const wall = (c, len, yaw) => {
+        c.y = y;
+        this.solids.push(new Solid({ center: c, size: new THREE.Vector3(T, GUARD_H, len), yaw, kind: 'guard' }));
+      };
+
+      // outer side edge, full length
+      wall(g.center.clone().addScaledVector(side, half - T / 2), s, g.yawIn);
+
+      // far edge, from the outer corner to where the exit path's outer edge crosses it
+      const db = d.dot(f), da = d.dot(side);
+      let a0 = -half, t1 = null;
+      if (Math.abs(db) > 1e-3) {
+        t1 = (half - T - (w / 2) * sideOut.dot(f)) / db;
+        a0 = Math.max(-half, t1 * da + (w / 2) * sideOut.dot(side) + 0.05);
+      }
+      if (half - a0 > 0.2) {
+        wall(g.center.clone().addScaledVector(f, half - T / 2).addScaledVector(side, (a0 + half) / 2), half - a0, g.yawIn + Math.PI / 2);
+      }
+
+      // angled turns: carry the guard a little way along the exit's outer edge
+      if (t1 !== null && !exit.dynamic) {
+        const t2 = half + Math.min(1.2, exit.half.z * 2);
+        if (t2 - t1 > 0.2) {
+          wall(g.center.clone().addScaledVector(d, (t1 + t2) / 2).addScaledVector(sideOut, w / 2 + T / 2), t2 - t1, yawOut);
+        }
+      }
+    }
+    this._guards.length = 0;
   }
 
   /** Two thin parallel rails the ball rides between. */
@@ -217,6 +277,7 @@ const MATS = {
   pad: { color: 0x56618a, roughness: 0.7 },
   beam: { color: 0x5b6cff, roughness: 0.45, metalness: 0.1 },
   rail: { color: 0xd4dae6, roughness: 0.25, metalness: 0.85 },
+  guard: { color: 0xffc94d, roughness: 0.3, metalness: 0.6, emissive: 0x3a2800 },
   checkpoint: { color: 0x17b3a6, roughness: 0.5, emissive: 0x0a3d39 },
   goal: { color: 0x2ecc71, roughness: 0.4, emissive: 0x0f4d2a },
   moving: { color: 0xff9f43, roughness: 0.5, emissive: 0x3d1f00 },
@@ -227,7 +288,7 @@ const MATS = {
   post: { color: 0xe8e8f0, roughness: 0.4, metalness: 0.6 },
 };
 const EDGE_COLORS = {
-  start: 0x9aa6d6, pad: 0x9aa6d6, beam: 0xaab4ff, rail: 0xffffff,
+  start: 0x9aa6d6, pad: 0x9aa6d6, beam: 0xaab4ff, rail: 0xffffff, guard: 0xfff0b3,
   checkpoint: 0x7ff5ea, goal: 0xa8ffcb, moving: 0xffd2a3,
   boost: 0xa5f3fc, jump: 0xffb3f0, crumble: 0x6b4f33, sweeper: 0xffc2cc, post: 0xffffff,
 };

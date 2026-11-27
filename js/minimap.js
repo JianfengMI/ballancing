@@ -2,7 +2,7 @@ import * as THREE from 'three';
 
 // Top-down map. World -Z is "up" on the map, matching the (never-rotating) camera.
 const COLORS = {
-  start: '#7d88b8', pad: '#7d88b8', beam: '#7f8cff', rail: '#e3e8f2',
+  start: '#7d88b8', pad: '#7d88b8', beam: '#7f8cff', rail: '#e3e8f2', guard: '#ffc94d',
   checkpoint: '#2ad4c4', goal: '#3ee07f', moving: '#ffa94d',
   boost: '#22d3ee', jump: '#ff4fd8', crumble: '#c8a27a', sweeper: '#ff3b5c', post: '#e8e8f0',
 };
