@@ -12,6 +12,7 @@ A 3D ball-balancing game in the browser (Three.js). Roll the ball along floating
 - **Score:** gems, boosts, jumps and checkpoints score points; doing them in quick succession builds a chain multiplier (up to x5). Falls cost points. Finishing adds time, no-fall and all-gem bonuses.
 - **Daily challenge:** a new generated track every day, the same for everyone. Your first finish is your official result (with how many tries it took); later runs are practice. Keep a daily streak going and share your result with friends.
 - Easy levels (1-4) have guard walls on the outside of corners.
+- **Path guide:** a blue band ahead of the ball shows where your tilt and speed are taking it (can be turned off in the menu).
 - The ball changes material as the levels get harder, and each one handles differently:
   - **Wood** (levels 1-2): steady and easy to steer.
   - **Rock** (3-4): heavy, slower to get going and keeps rolling when you let go.
@@ -37,6 +38,7 @@ Serve the folder with any static server, e.g. `npx http-server -c-1`, then open 
 - `js/autopilot.js` - headless bot that drives a level; vets daily tracks and sets their par / dev times
 - `js/ghost.js` - ghost recording and playback
 - `js/score.js` - score and chain rules
+- `js/pathguide.js` - blue path guide showing where tilt and speed are taking the ball
 - `js/materials.js` - ball materials: handling settings, textures and sounds
 - `js/input.js` - keyboard, tilt and touch input
 - `js/main.js` - scene, camera, game loop and UI

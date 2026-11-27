@@ -10,6 +10,7 @@ import { MATERIALS, ballLook } from './materials.js';
 import { GhostRecorder, loadGhost, saveGhost, ghostAt } from './ghost.js';
 import { Score, fmtScore } from './score.js';
 import { dailyLevel, todayKey, dayNumber, daysBetween } from './daily.js';
+import { PathGuide } from './pathguide.js';
 
 const STEP = 1 / 240;
 // The camera always looks "north" (-Z) and never rotates, so screen-up / tilt-away
@@ -29,7 +30,7 @@ const SAVE_KEY = 'beamroller.v2';
 // daily = today's challenge: { key, tries, result (official = first finish), rec (best run today) }
 // streak = { last: day key of the last official daily result, count }
 const DEFAULT_SAVE = {
-  unlocked: 1, best: {}, control: 'tilt', sens: 'normal', muted: false, ghost: true,
+  unlocked: 1, best: {}, control: 'tilt', sens: 'normal', muted: false, ghost: true, guide: true,
   daily: null, streak: { last: null, count: 0 },
 };
 function loadSave() {
@@ -117,6 +118,7 @@ const minimap = new Minimap($('minimap'));
 const sfx = new Sfx();
 sfx.muted = !!save.muted;
 const fx = new Particles(scene);
+const guide = new PathGuide(scene);
 
 let state = 'menu'; // menu | countdown | playing | falling | paused | won
 let pausedFrom = 'playing';
@@ -301,6 +303,8 @@ function update(dt) {
     accum -= STEP;
   }
   if (state !== 'countdown') for (const ev of surfaceEffects(ball, level.track.solids, dt)) handleEvent(ev);
+  // blue path ahead of the ball: where speed + tilt are taking it
+  guide.update(dt, ball, world, mat.accel, save.guide && state === 'playing');
 
   // crumble tiles: shake while about to drop, then fall away
   for (const s of level.crumbles) {
@@ -486,6 +490,8 @@ function renderMenu() {
   renderDailyCard();
   $('ghost-on').classList.toggle('on', !!save.ghost);
   $('ghost-off').classList.toggle('on', !save.ghost);
+  $('guide-on').classList.toggle('on', !!save.guide);
+  $('guide-off').classList.toggle('on', !save.guide);
 
   if (isTouch) {
     show('control-row', true);
@@ -532,6 +538,13 @@ function setGhost(on) {
 }
 $('ghost-on').addEventListener('click', () => setGhost(true));
 $('ghost-off').addEventListener('click', () => setGhost(false));
+function setGuide(on) {
+  save.guide = on;
+  persist();
+  renderMenu();
+}
+$('guide-on').addEventListener('click', () => setGuide(true));
+$('guide-off').addEventListener('click', () => setGuide(false));
 $('daily-btn').addEventListener('click', () => startDaily());
 $('ctl-tilt').addEventListener('click', () => setControl('tilt'));
 $('ctl-touch').addEventListener('click', () => setControl('touch'));
@@ -677,6 +690,7 @@ function win() {
   fx.emit(ball.pos, { count: 80, colors: [0xff4d6d, 0xffd34d, 0x5dff9e, 0x67e8f9, 0xb084ff], speed: 5, up: 6, life: 1.4, gravity: 9 });
 
   ghostMesh.visible = false;
+  guide.hide();
   recorder.sample(runTime, ball.pos);
 
   const lv = def;
@@ -772,6 +786,7 @@ function toMenu() {
   show('hud', false);
   show('menu', true);
   ghostMesh.visible = false;
+  guide.hide();
   // the menu shows the next campaign level behind it
   if (def.daily) loadLevel(levelIndex);
   renderMenu();
