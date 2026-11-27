@@ -226,3 +226,35 @@ button.small { padding: 8px 12px; font-size: 14px; align-self: center; }
 .level-btn { padding: 8px 14px; }
 .level-btn .num { width: 28px; height: 28px; font-size: 14px; }
 .panel h1 { font-size: 32px; }
+
+/* ---- score, splits, medals ---- */
+#hud-run { font-size: 14px; margin-top: 2px; font-variant-numeric: tabular-nums; font-weight: 700; }
+#hud-score { color: #ffd34d; display: inline-block; }
+#hud-score.pulse { animation: score-pulse 0.3s ease-out; }
+@keyframes score-pulse { 0% { transform: scale(1.35); } 100% { transform: scale(1); } }
+#hud-chain { color: #ff7be5; }
+.ahead { color: #5dff9e; }
+.behind { color: #ff6b81; }
+#hud-delta.ahead, #hud-delta.behind { margin-left: 4px; }
+.level-btn .medal { margin-right: 4px; }
+#win-goals li.medal-goal { margin-top: 2px; }
+#win-goals li.medal-goal.ok { color: #ffd34d; font-weight: 700; }
+#win-stats .bonus { font-size: 13px; }
+
+/* ---- daily challenge ---- */
+.daily-btn {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-areas: "title streak" "status streak";
+  align-items: center;
+  column-gap: 10px;
+  text-align: left;
+  background: linear-gradient(135deg, rgba(255, 79, 216, 0.35), rgba(91, 108, 255, 0.35));
+  border: 1px solid rgba(255, 179, 240, 0.45);
+  padding: 10px 14px;
+}
+.daily-btn:disabled { opacity: 0.5; cursor: default; }
+.daily-title { grid-area: title; font-weight: 700; }
+.daily-title .mat { color: var(--muted); font-size: 12px; font-weight: 400; margin-left: 4px; }
+.daily-status { grid-area: status; color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
+.daily-streak { grid-area: streak; font-weight: 700; font-size: 18px; }

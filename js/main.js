@@ -7,6 +7,9 @@ import { Minimap } from './minimap.js';
 import { Sfx, vibrate } from './audio.js';
 import { Particles } from './particles.js';
 import { MATERIALS, ballLook } from './materials.js';
+import { GhostRecorder, loadGhost, saveGhost, ghostAt } from './ghost.js';
+import { Score, fmtScore } from './score.js';
+import { dailyLevel, todayKey, dayNumber, daysBetween } from './daily.js';
 
 const STEP = 1 / 240;
 // The camera always looks "north" (-Z) and never rotates, so screen-up / tilt-away
@@ -15,7 +18,6 @@ const CAM_DIST = 5.4;
 const CAM_HEIGHT = 6.4;
 const LOOK_AHEAD = 2.8;
 const GEM_RADIUS = 0.7;
-const COMBO_WINDOW = 1.6;   // seconds between gems to keep a combo going
 const COUNTDOWN = 1.8;
 
 const $ = (id) => document.getElementById(id);
@@ -23,7 +25,13 @@ const isTouch = window.matchMedia('(pointer: coarse)').matches;
 
 // ---------- persistence ----------
 const SAVE_KEY = 'beamroller.v2';
-const DEFAULT_SAVE = { unlocked: 1, best: {}, control: 'tilt', sens: 'normal', muted: false };
+// best[id] = { time, stars, medal, score, splits }
+// daily = today's challenge: { key, tries, result (official = first finish), rec (best run today) }
+// streak = { last: day key of the last official daily result, count }
+const DEFAULT_SAVE = {
+  unlocked: 1, best: {}, control: 'tilt', sens: 'normal', muted: false, ghost: true,
+  daily: null, streak: { last: null, count: 0 },
+};
 function loadSave() {
   try {
     const s = Object.assign({}, DEFAULT_SAVE, JSON.parse(localStorage.getItem(SAVE_KEY) || '{}'));
@@ -94,6 +102,14 @@ const ballMesh = new THREE.Mesh();
 ballMesh.castShadow = true;
 scene.add(ballMesh);
 
+// Ghost of your best run: same shape, see-through.
+const ghostMesh = new THREE.Mesh(
+  new THREE.SphereGeometry(BALL_R, 24, 16),
+  new THREE.MeshBasicMaterial({ color: 0x9fd8ff, transparent: true, opacity: 0.32, depthWrite: false })
+);
+ghostMesh.visible = false;
+scene.add(ghostMesh);
+
 // ---------- game state ----------
 const ball = new Ball();
 const input = new Input(canvas, $('joystick'), $('joy-knob'));
@@ -115,29 +131,48 @@ let fallTimer = 0;
 let countdown = 0;
 let lastCount = -1;
 let gemsTaken = 0;
-let combo = 0;
-let comboTimer = 0;
 let shake = 0;
+let def = LEVELS[0];        // the level being played (a campaign level or today's daily)
+const recorder = new GhostRecorder();
+const score = new Score();
+let ghost = null;           // best run's ghost for this level
+let splits = [];            // this run's checkpoint times
+let lastDelta = null;       // last split vs best (seconds; negative = ahead)
 let menuAngle = 0;
 let mat = MATERIALS.wood;
 let wakeLock = null;
 const camPos = new THREE.Vector3();
 const camLook = new THREE.Vector3();
 
-function loadLevel(i) {
+// ---------- daily challenge / records ----------
+function dailyState() {
+  const key = todayKey();
+  if (!save.daily || save.daily.key !== key) save.daily = { key, tries: 0, result: null, rec: null };
+  return save.daily;
+}
+/** Best record for the current level (today's best for the daily). */
+function record() { return def.daily ? dailyState().rec : save.best[def.id]; }
+function streakCount() {
+  const s = save.streak;
+  return s.last && daysBetween(s.last, todayKey()) <= 1 ? s.count : 0;
+}
+
+/** Loads a level by campaign index, or a level definition (the daily). */
+function loadLevel(which) {
   if (level) {
     scene.remove(level.group);
     level.group.traverse((o) => { if (o.geometry) o.geometry.dispose(); });
   }
-  levelIndex = i;
-  mat = MATERIALS[LEVELS[i].ball] || MATERIALS.wood;
-  const look = ballLook(LEVELS[i].ball, renderer);
+  if (typeof which === 'number') { levelIndex = which; def = LEVELS[which]; } else def = which;
+  mat = MATERIALS[def.ball] || MATERIALS.wood;
+  const look = ballLook(def.ball, renderer);
   ballMesh.geometry = look.geometry;
   ballMesh.material = look.material;
   ball.setMaterial(mat);
   sfx.setMaterial(mat.sound);
+  ghost = save.ghost ? loadGhost(def.id) : null;
   const track = new TrackBuilder();
-  LEVELS[i].build(track);
+  def.build(track);
   const { group, checkpointMarkers, goalMarker, gems } = buildMeshes(track);
   scene.add(group);
   let minY = Infinity;
@@ -158,7 +193,11 @@ function resetRun() {
   runTime = 0;
   falls = 0;
   gemsTaken = 0;
-  combo = 0;
+  score.reset();
+  recorder.start();
+  splits = [];
+  lastDelta = null;
+  ghostMesh.visible = false;
   for (const s of level.movers) { s.update(0); s.delta.set(0, 0, 0); }
   for (const m of level.checkpointMarkers) { m.material.color.set(0x40e0d0); m.material.emissive.set(0x1a8a80); }
   for (const g of level.gems) { g.taken = false; g.mesh.visible = true; }
@@ -180,7 +219,6 @@ function respawn(snapCamera) {
   ball.reset(sp.pos.clone().add(new THREE.Vector3(0, BALL_R + 0.02, 0)));
   ballMesh.position.copy(ball.pos);
   resetCrumbles();
-  combo = 0;
   if (snapCamera) placeCamera(1);
 }
 
@@ -222,15 +260,26 @@ const _q = new THREE.Quaternion();
 const _axis = new THREE.Vector3();
 const _v = new THREE.Vector3();
 
+/** Adds points for a scoring move and shows the chain. */
+function scoreEvent(kind) {
+  if (state !== 'playing') return null;
+  const r = score.event(kind, runTime);
+  if (r.chain >= 3) toast(`Chain x${r.chain}!  +${r.points}`, 800);
+  pulseScore();
+  return r;
+}
+
 function handleEvent(ev) {
   switch (ev) {
     case 'boost':
       sfx.boost(); vibrate(20);
       fx.emit(ball.pos, { count: 18, color: 0x67e8f9, speed: 2.5, up: 1.5, life: 0.5 });
+      scoreEvent('boost');
       break;
     case 'jump':
       sfx.jump(); vibrate(25);
       fx.emit(ball.pos, { count: 22, color: 0xff7be5, speed: 3, up: 1, life: 0.6 });
+      scoreEvent('jump');
       break;
     case 'crack': sfx.crack(); break;
     case 'crumble': sfx.crumble(); break;
@@ -291,22 +340,26 @@ function update(dt) {
     fx.emit(ball.pos, { count: 2, color: 0x67e8f9, speed: 0.3, up: 0.2, life: 0.35, gravity: 0, spread: 0.4 });
   }
 
+  // ghost of the best run, on the same clock as this run
+  if (ghost) {
+    ghostAt(ghost, runTime, ghostMesh.position);
+    ghostMesh.visible = runTime <= ghost.time + 0.4;
+  }
+
   if (state === 'playing') {
     runTime += dt;
-    comboTimer -= dt;
-    if (comboTimer <= 0) combo = 0;
+    recorder.sample(runTime, ball.pos);
 
     for (const g of level.gems) {
       if (g.taken || g.pos.distanceTo(ball.pos) > GEM_RADIUS) continue;
       g.taken = true;
       g.mesh.visible = false;
       gemsTaken++;
-      sfx.gem(combo);
-      combo++;
-      comboTimer = COMBO_WINDOW;
+      // pitch climbs while the chain is alive
+      sfx.gem(score.live(runTime) ? score.chain : 0);
+      scoreEvent('gem');
       vibrate(10);
       fx.emit(g.pos, { count: 14, colors: [0xffd34d, 0xfff3b0, 0xffa94d], speed: 2.2, up: 2.5, life: 0.6 });
-      if (combo >= 3) toast(`Combo x${combo}!`, 700);
     }
 
     const cps = level.track.checkpoints;
@@ -319,13 +372,21 @@ function update(dt) {
         ring.material.emissive.set(0x7a5a00);
         sfx.checkpoint(); vibrate(20);
         fx.emit(ring.position, { count: 30, color: 0x40e0d0, speed: 3, up: 2, life: 0.8 });
-        toast('Checkpoint!');
+        scoreEvent('checkpoint');
+        // split vs your best run
+        splits[i] = runTime;
+        const bestSplit = record()?.splits?.[i];
+        if (bestSplit != null) {
+          lastDelta = runTime - bestSplit;
+          toast(`Checkpoint  ${fmtDelta(lastDelta)}`, 1500);
+        } else toast('Checkpoint!');
       }
     }
     if (ball.ground && ball.ground.kind === 'goal') win();
     else if (ball.pos.y < level.minY - 6) {
       state = 'falling';
       falls++;
+      score.fall();
       fallTimer = 0.9;
       sfx.fall(); vibrate(80);
       toast('Oops!');
@@ -376,13 +437,28 @@ function showCount(text) {
 }
 
 function fmt(t) { return `${t.toFixed(1)}s`; }
+function fmtDelta(d) { return `${d <= 0 ? '−' : '+'}${Math.abs(d).toFixed(1)}s`; }
 function starString(n) { return '★'.repeat(n) + '☆'.repeat(3 - n); }
+const MEDAL = '🏅';
+
+function pulseScore() {
+  const el = $('hud-score');
+  el.classList.remove('pulse');
+  void el.offsetWidth;
+  el.classList.add('pulse');
+}
 
 function updateHud() {
-  $('hud-level').textContent = `${levelIndex + 1}. ${LEVELS[levelIndex].name} · ${mat.icon} ${mat.name}`;
+  $('hud-level').textContent = `${def.daily ? def.name : `${levelIndex + 1}. ${def.name}`} · ${mat.icon} ${mat.name}`;
   $('hud-time').textContent = fmt(runTime);
   $('hud-falls').textContent = falls;
   $('hud-gems').textContent = `${gemsTaken}/${level.gems.length}`;
+  $('hud-score').textContent = fmtScore(score.total);
+  const chain = score.live(runTime) ? `x${score.mult}` : '';
+  $('hud-chain').textContent = chain;
+  const d = $('hud-delta');
+  d.textContent = lastDelta === null ? '' : fmtDelta(lastDelta);
+  d.className = lastDelta === null ? '' : lastDelta <= 0 ? 'ahead' : 'behind';
 }
 
 function show(id, on) { $(id).classList.toggle('hidden', !on); }
@@ -390,21 +466,26 @@ function show(id, on) { $(id).classList.toggle('hidden', !on); }
 function renderMenu() {
   const list = $('level-list');
   list.innerHTML = '';
-  let total = 0;
+  let total = 0, medals = 0;
   LEVELS.forEach((lv, i) => {
     const b = document.createElement('button');
     const locked = i + 1 > save.unlocked;
     const rec = save.best[lv.id];
     total += rec ? rec.stars : 0;
+    medals += rec && rec.medal ? 1 : 0;
     b.className = 'level-btn' + (locked ? ' locked' : '');
     b.disabled = locked;
-    const right = locked ? '🔒' : rec ? `<span class="stars">${starString(rec.stars)}</span>${fmt(rec.time)}` : '';
+    const medal = rec && rec.medal ? `<span class="medal" title="Dev medal">${MEDAL}</span>` : '';
+    const right = locked ? '🔒' : rec ? `${medal}<span class="stars">${starString(rec.stars)}</span>${fmt(rec.time)}` : '';
     const m = MATERIALS[lv.ball] || MATERIALS.wood;
     b.innerHTML = `<span class="num">${i + 1}</span><span class="name">${lv.name}<span class="mat" title="${m.name} ball">${m.icon} ${m.name}</span></span><span class="best">${right}</span>`;
     b.addEventListener('click', () => startLevel(i));
     list.appendChild(b);
   });
-  $('total-stars').textContent = `★ ${total} / ${LEVELS.length * 3}`;
+  $('total-stars').textContent = `★ ${total} / ${LEVELS.length * 3}  ·  ${MEDAL} ${medals} / ${LEVELS.length}`;
+  renderDailyCard();
+  $('ghost-on').classList.toggle('on', !!save.ghost);
+  $('ghost-off').classList.toggle('on', !save.ghost);
 
   if (isTouch) {
     show('control-row', true);
@@ -422,11 +503,36 @@ function renderMenu() {
   updateMuteButtons();
 }
 
+function renderDailyCard() {
+  const key = todayKey();
+  const d = dailyState();
+  const lv = dailyLevel(key);
+  const m = MATERIALS[lv?.ball] || MATERIALS.wood;
+  const streak = streakCount();
+  let status;
+  if (!lv) status = 'Not available today';
+  else if (d.result) status = `✓ ${fmt(d.result.time)} · ${fmtScore(d.result.score)} pts${d.result.medal ? ` · ${MEDAL}` : ''}`;
+  else status = d.tries ? `${d.tries} ${d.tries === 1 ? 'try' : 'tries'} so far · first finish counts` : 'Your first finish counts!';
+  $('daily-btn').disabled = !lv;
+  $('daily-btn').innerHTML =
+    `<span class="daily-title">Daily challenge #${dayNumber(key)} <span class="mat">${m.icon} ${m.name}</span></span>` +
+    `<span class="daily-status">${status}</span>` +
+    (streak ? `<span class="daily-streak" title="Days in a row">🔥 ${streak}</span>` : '');
+}
+
 function setControl(mode) {
   save.control = mode;
   persist();
   renderMenu();
 }
+function setGhost(on) {
+  save.ghost = on;
+  persist();
+  renderMenu();
+}
+$('ghost-on').addEventListener('click', () => setGhost(true));
+$('ghost-off').addEventListener('click', () => setGhost(false));
+$('daily-btn').addEventListener('click', () => startDaily());
 $('ctl-tilt').addEventListener('click', () => setControl('tilt'));
 $('ctl-touch').addEventListener('click', () => setControl('touch'));
 document.querySelectorAll('[data-sens]').forEach((b) => b.addEventListener('click', () => {
@@ -500,24 +606,65 @@ function beginCountdown() {
   countdown = COUNTDOWN;
   lastCount = -1;
   input.enabled = true;
+  // every daily start before the first finish counts as a try (shown when you share)
+  if (def.daily) {
+    const d = dailyState();
+    if (!d.result) { d.tries++; persist(); }
+  }
 }
 
-function startLevel(i) {
+function enterLevel(which) {
   configureControls();
   sfx.unlock();
   enterImmersive();
   keepAwake();
-  loadLevel(i);
+  loadLevel(which);
   input.reset();
   show('menu', false);
   show('win', false);
   show('pause', false);
   show('hud', true);
   show('btn-calib', isTouch && save.control === 'tilt');
+}
+
+function startLevel(i) {
+  enterLevel(i);
   // announce the ball when it changes from the previous level (or on the first level)
   const prevBall = i > 0 ? LEVELS[i - 1].ball : null;
   if (prevBall !== LEVELS[i].ball || i === 0) toast(`${mat.icon} ${mat.hint}`, 2600);
   beginCountdown();
+}
+
+function startDaily() {
+  const lv = dailyLevel(todayKey());
+  if (!lv) return;
+  enterLevel(lv);
+  const d = dailyState();
+  toast(d.result ? `Practice run · ${mat.icon} ${mat.name} ball` : `${mat.icon} ${mat.hint}`, 2600);
+  beginCountdown();
+}
+
+function shareText() {
+  const d = dailyState();
+  const r = d.result;
+  const tries = r.tries === 1 ? '1st try' : `${r.tries} tries`;
+  return [
+    `Beam Roller Daily #${dayNumber(d.key)} ${(MATERIALS[def.ball] || MATERIALS.wood).icon}`,
+    `⏱ ${fmt(r.time)} · ◆ ${r.gems}/${r.totalGems} · ${r.falls} ${r.falls === 1 ? 'fall' : 'falls'}`,
+    `${starString(r.stars)}${r.medal ? ` ${MEDAL}` : ''} · ${fmtScore(r.score)} pts · ${tries}`,
+  ].join('\n');
+}
+
+async function shareDaily() {
+  const text = shareText();
+  try {
+    if (navigator.share && isTouch) { await navigator.share({ text }); return; }
+    await navigator.clipboard.writeText(text);
+    toast('Result copied — paste it to your friends!', 2000);
+  } catch (e) {
+    if (e && e.name === 'AbortError') return;   // share sheet closed
+    toast('Could not copy the result', 1800);
+  }
 }
 
 function win() {
@@ -529,34 +676,74 @@ function win() {
   vibrate([30, 60, 30]);
   fx.emit(ball.pos, { count: 80, colors: [0xff4d6d, 0xffd34d, 0x5dff9e, 0x67e8f9, 0xb084ff], speed: 5, up: 6, life: 1.4, gravity: 9 });
 
-  const lv = LEVELS[levelIndex];
+  ghostMesh.visible = false;
+  recorder.sample(runTime, ball.pos);
+
+  const lv = def;
   const allGems = gemsTaken === level.gems.length;
   const underPar = runTime <= lv.par;
+  const medal = allGems && runTime <= lv.dev;
   const stars = 1 + (allGems ? 1 : 0) + (underPar ? 1 : 0);
-  const prev = save.best[lv.id];
+  const bonus = score.finish({ time: runTime, par: lv.par, falls, allGems });
+  const prev = record();
   const isBest = !prev || runTime < prev.time;
-  save.best[lv.id] = {
+  const isBestScore = !prev || score.total > (prev.score || 0);
+  const rec = {
     time: isBest ? runTime : prev.time,
+    splits: isBest ? splits.slice() : prev.splits,
     stars: Math.max(stars, prev ? prev.stars : 0),
+    medal: medal || !!(prev && prev.medal),
+    score: Math.max(score.total, prev ? prev.score || 0 : 0),
   };
-  save.unlocked = Math.max(save.unlocked, Math.min(LEVELS.length, levelIndex + 2));
+  // keep the fastest run as the ghost (or this one if there is none yet)
+  if (isBest || !loadGhost(lv.id)) saveGhost(lv.id, recorder.data(runTime));
+
+  let official = false;
+  if (lv.daily) {
+    const d = dailyState();
+    d.rec = rec;
+    if (!d.result) {
+      official = true;
+      d.result = { time: runTime, score: score.total, stars, medal, gems: gemsTaken, totalGems: level.gems.length, falls, tries: Math.max(1, d.tries) };
+      const s = save.streak;
+      s.count = s.last && daysBetween(s.last, d.key) === 1 ? s.count + 1 : s.last === d.key ? s.count : 1;
+      s.last = d.key;
+    }
+  } else {
+    save.best[lv.id] = rec;
+    save.unlocked = Math.max(save.unlocked, Math.min(LEVELS.length, levelIndex + 2));
+  }
   persist();
 
-  const last = levelIndex === LEVELS.length - 1;
-  $('win-title').textContent = last ? 'You beat the Grand Tour!' : 'Level complete!';
+  const last = !lv.daily && levelIndex === LEVELS.length - 1;
+  $('win-title').textContent = lv.daily
+    ? (official ? `${lv.name} done!` : 'Practice run done')
+    : last ? 'You beat the Grand Tour!' : 'Level complete!';
   const goals = [
     ['Finish', true],
     [`All gems (${gemsTaken}/${level.gems.length})`, allGems],
     [`Under ${lv.par}s (${fmt(runTime)})`, underPar],
   ];
-  $('win-goals').innerHTML = goals.map(([t, ok]) => `<li class="${ok ? 'ok' : ''}">${ok ? '★' : '☆'} ${t}</li>`).join('');
-  $('win-stats').innerHTML = `${isBest && prev ? 'New best time! · ' : ''}Falls <b>${falls}</b>`;
+  $('win-goals').innerHTML =
+    goals.map(([t, ok]) => `<li class="${ok ? 'ok' : ''}">${ok ? '★' : '☆'} ${t}</li>`).join('') +
+    `<li class="medal-goal ${medal ? 'ok' : ''}">${medal ? MEDAL : '○'} Dev medal: all gems under ${lv.dev}s</li>`;
+
+  const lines = [];
+  if (prev && !isBest) lines.push(`Best <b>${fmt(prev.time)}</b> (${fmtDelta(runTime - prev.time)})`);
+  else if (prev) lines.push(`<span class="ahead">New best time! ${fmtDelta(runTime - prev.time)}</span>`);
+  lines.push(`Falls <b>${falls}</b> · Best chain <b>x${score.bestChain}</b>`);
+  lines.push(`Score <b>${fmtScore(score.total)}</b>${isBestScore && prev ? ' <span class="ahead">New high score!</span>' : prev ? ` · high ${fmtScore(prev.score || 0)}` : ''}`);
+  lines.push(`<span class="bonus">${bonus.map(([t, p]) => `${t} +${fmtScore(p)}`).join(' · ')}</span>`);
+  if (lv.daily && !official) lines.push(`Official result: <b>${fmt(dailyState().result.time)}</b> · ${fmtScore(dailyState().result.score)} pts`);
+  if (lv.daily) lines.push(`🔥 ${streakCount()} day streak`);
+  $('win-stats').innerHTML = lines.join('<br>');
   const starEls = document.querySelectorAll('#win-stars .star');
   starEls.forEach((el) => el.classList.remove('lit'));
   for (let k = 0; k < stars; k++) {
     setTimeout(() => { starEls[k].classList.add('lit'); sfx.star(k); }, 450 + k * 280);
   }
-  show('btn-next', !last);
+  show('btn-next', !last && !lv.daily);
+  show('btn-share', !!lv.daily);
   show('hud', false);
   setTimeout(() => { if (state === 'won') show('win', true); }, 350);
 }
@@ -584,6 +771,9 @@ function toMenu() {
   show('win', false);
   show('hud', false);
   show('menu', true);
+  ghostMesh.visible = false;
+  // the menu shows the next campaign level behind it
+  if (def.daily) loadLevel(levelIndex);
   renderMenu();
   respawn(true);
   try { wakeLock?.release(); } catch { /* ignore */ }
@@ -595,7 +785,8 @@ $('btn-resume').addEventListener('click', resume);
 $('btn-restart').addEventListener('click', () => { show('pause', false); resetRun(); beginCountdown(); });
 $('btn-menu').addEventListener('click', toMenu);
 $('btn-next').addEventListener('click', () => startLevel(levelIndex + 1));
-$('btn-retry').addEventListener('click', () => startLevel(levelIndex));
+$('btn-retry').addEventListener('click', () => (def.daily ? startDaily() : startLevel(levelIndex)));
+$('btn-share').addEventListener('click', shareDaily);
 $('btn-win-menu').addEventListener('click', toMenu);
 $('btn-calib').addEventListener('click', () => { input.calibrate(); toast('Recalibrated'); });
 $('btn-pause-calib').addEventListener('click', () => { input.calibrate(); toast('Recalibrated'); });
@@ -605,7 +796,7 @@ window.addEventListener('keydown', (e) => {
     if (state === 'paused') resume(); else pause();
   } else if (e.code === 'KeyR' && (state === 'playing' || state === 'falling')) {
     resetRun(); beginCountdown();
-  } else if ((e.code === 'Enter' || e.code === 'Space') && state === 'won' && levelIndex < LEVELS.length - 1) {
+  } else if ((e.code === 'Enter' || e.code === 'Space') && state === 'won' && !def.daily && levelIndex < LEVELS.length - 1) {
     startLevel(levelIndex + 1);
   }
 });

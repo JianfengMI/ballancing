@@ -31,6 +31,7 @@ export class TrackBuilder {
     this.spawn = null;
     this.guardCorners = false;
     this._guards = [];
+    this.path = [];   // centre-line points (after each advance); the autopilot follows these
   }
 
   /** From here on, corners get low walls on their outer side so the ball can't overshoot. */
@@ -39,7 +40,11 @@ export class TrackBuilder {
   get fwd() { return new THREE.Vector3(-Math.sin(this.yaw), 0, -Math.cos(this.yaw)); }
   get right() { return new THREE.Vector3(Math.cos(this.yaw), 0, -Math.sin(this.yaw)); }
 
-  _advance(d) { this.pos.addScaledVector(this.fwd, d); }
+  _advance(d) {
+    if (!this.path.length) this.path.push(this.pos.clone());
+    this.pos.addScaledVector(this.fwd, d);
+    this.path.push(this.pos.clone());
+  }
 
   _flat(len, w, kind, { h = THICK, lateral = 0, lift = 0, motion = null, extra = {} } = {}) {
     const c = this.pos.clone().addScaledVector(this.fwd, len / 2).addScaledVector(this.right, lateral);

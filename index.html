@@ -20,6 +20,7 @@
     <div class="hud-left">
       <div id="hud-level"></div>
       <div id="hud-stats"><span class="gem-icon">&#9670;</span> <span id="hud-gems">0/0</span> &middot; <span id="hud-time">0.0s</span> &middot; <span id="hud-falls">0</span> falls</div>
+      <div id="hud-run"><span id="hud-score">0</span> <span id="hud-chain"></span> <span id="hud-delta"></span></div>
     </div>
     <div class="hud-right">
       <button id="btn-mute" class="icon" title="Sound" aria-label="Toggle sound">&#128266;</button>
@@ -38,7 +39,15 @@
       <h1>Beam Roller</h1>
       <p class="sub">Keep the ball on the beams. Collect gems, beat the clock.</p>
       <div id="total-stars"></div>
+      <button id="daily-btn" class="daily-btn"></button>
       <div id="level-list"></div>
+      <div class="control-row">
+        <span>Ghost of best run</span>
+        <div class="seg-group">
+          <button id="ghost-on" class="seg">On</button>
+          <button id="ghost-off" class="seg">Off</button>
+        </div>
+      </div>
       <div id="control-row" class="control-row hidden">
         <span>Control</span>
         <div class="seg-group">
@@ -76,6 +85,7 @@
       <ul id="win-goals"></ul>
       <p id="win-stats"></p>
       <button id="btn-next">Next level</button>
+      <button id="btn-share" class="hidden">Share result</button>
       <button id="btn-retry" class="ghost">Play again</button>
       <button id="btn-win-menu" class="ghost">Menu</button>
     </div>

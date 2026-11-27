@@ -2,7 +2,8 @@
 // The camera never rotates, so every level keeps heading "up the screen":
 // the running heading always stays within -90..+90 degrees (no doubling back).
 // `.guarded()` adds walls on the outside of every corner after it (used on the easy levels).
-// `par` is the target time (seconds) for the third star.
+// `par` is the target time (seconds) for the third star; `dev` is the dev-medal time
+// (all gems AND under it), about 25% slower than a clean autopilot run.
 // `ball` is the ball material (see materials.js): wood -> rock -> iron -> paper, easy to hard.
 const PI = Math.PI;
 
@@ -12,6 +13,7 @@ export const LEVELS = [
     ball: 'wood',
     name: 'First Roll',
     par: 17,
+    dev: 11.5,
     build: (b) => b
       .guarded()
       .start(4)
@@ -33,6 +35,7 @@ export const LEVELS = [
     ball: 'wood',
     name: 'Narrow Path',
     par: 22,
+    dev: 13.5,
     build: (b) => b
       .guarded()
       .start(4)
@@ -58,6 +61,7 @@ export const LEVELS = [
     ball: 'rock',
     name: 'Launch Pad',
     par: 26,
+    dev: 15,
     build: (b) => b
       .guarded()
       .start(4)
@@ -86,6 +90,7 @@ export const LEVELS = [
     ball: 'rock',
     name: 'On the Rails',
     par: 24,
+    dev: 18,
     build: (b) => b
       .guarded()
       .start(4)
@@ -110,6 +115,7 @@ export const LEVELS = [
     ball: 'iron',
     name: 'Crumble Bridge',
     par: 20,
+    dev: 14,
     build: (b) => b
       .start(4)
       .straight(5, 2, { gems: 2 })
@@ -133,6 +139,7 @@ export const LEVELS = [
     ball: 'iron',
     name: 'Leap of Faith',
     par: 25,
+    dev: 14,
     build: (b) => b
       .start(4)
       .straight(7, 1.8, { gems: 2 })
@@ -164,6 +171,7 @@ export const LEVELS = [
     ball: 'paper',
     name: 'Sweepers',
     par: 24,
+    dev: 16,
     build: (b) => b
       .start(4)
       .straight(5, 2.2, { gems: 2 })
@@ -186,6 +194,7 @@ export const LEVELS = [
     ball: 'paper',
     name: 'Moving Parts',
     par: 37,
+    dev: 23,
     build: (b) => b
       .start(4)
       .straight(5, 1.4, { gems: 2 })
@@ -210,6 +219,7 @@ export const LEVELS = [
     ball: 'paper',
     name: 'Grand Tour',
     par: 40,
+    dev: 26,
     build: (b) => b
       .start(4)
       .straight(4, 2, { gems: 2 })
