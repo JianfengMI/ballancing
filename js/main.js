@@ -670,6 +670,13 @@ function shareText() {
 
 async function shareDaily() {
   const text = shareText();
+  // In the Android app the WebView has no navigator.share; use the native share sheet.
+  const capShare = window.Capacitor?.Plugins?.Share;
+  if (capShare) {
+    try { await capShare.share({ text, dialogTitle: 'Share your result' }); }
+    catch { /* share sheet closed */ }
+    return;
+  }
   try {
     if (navigator.share && isTouch) { await navigator.share({ text }); return; }
     await navigator.clipboard.writeText(text);
@@ -819,7 +826,15 @@ document.addEventListener('visibilitychange', () => {
   if (document.hidden) pause();
   else if (state !== 'menu') keepAwake();
 });
-const landscapeMobile = window.matchMedia('(orientation: landscape) and (pointer: coarse) and (max-height: 520px)');
+// Android back button (only inside the Capacitor app; plain browsers skip this).
+const capApp = window.Capacitor?.Plugins?.App;
+capApp?.addListener('backButton', () => {
+  if (state === 'paused') resume();
+  else if (state === 'won') toMenu();
+  else if (state === 'menu') capApp.exitApp();
+  else pause();
+});
+const landscapeMobile =window.matchMedia('(orientation: landscape) and (pointer: coarse) and (max-height: 520px)');
 landscapeMobile.addEventListener?.('change', (e) => { if (e.matches) pause(); });
 
 // ---------- main loop ----------

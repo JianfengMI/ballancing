@@ -30,6 +30,12 @@ Tilt controls require HTTPS (GitHub Pages provides it). On iPhone, allow motion 
 ## Run locally
 Serve the folder with any static server, e.g. `npx http-server -c-1`, then open http://localhost:8080.
 
+## Android app
+The Android app wraps the same web files with [Capacitor](https://capacitorjs.com) (project in `android/`, portrait only; the back button pauses, resumes, or exits from the menu).
+1. Install [Android Studio](https://developer.android.com/studio) (it includes the JDK and Android SDK).
+2. `npm install`, then `npm run sync` after every change to the game. It copies `index.html`, `style.css`, `js/` and `vendor/` into `www/` and from there into the Android project.
+3. `npm run open:android` opens the project in Android Studio; run it on a phone or emulator from there.
+
 ## Code
 - `js/physics.js` - ball physics, sphere-vs-box collisions, special surfaces (boost, jump, crumble, sweepers)
 - `js/track.js` - track builder (straight, ramp, corner, rails, gaps, moving platforms) and meshes
