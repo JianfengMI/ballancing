@@ -36,6 +36,26 @@ The Android app wraps the same web files with [Capacitor](https://capacitorjs.co
 2. `npm install`, then `npm run sync` after every change to the game. It copies `index.html`, `style.css`, `js/` and `vendor/` into `www/` and from there into the Android project.
 3. `npm run open:android` opens the project in Android Studio; run it on a phone or emulator from there.
 
+## Roadmap
+**First Google Play release** (Android app only; the web version stays ad-free)
+- Google Play Games leaderboards: per-level best time and high score, daily challenge.
+- AdMob with consent (UMP). Rewarded ads are always the player's choice and never improve a leaderboard result:
+  - **Streak saver:** watch an ad to keep your daily streak after missing a day.
+  - **Watch a pro run:** the autopilot shows a clean run of the level (or races you as a gold ghost).
+  - **Cosmetic trails:** unlock ball trails and finish effects. They change looks only, never handling.
+- An occasional interstitial between levels; no banners.
+
+**First update: track editor**
+- Build your own track piece by piece (straight, corners, ramp, gap, boost, ...) in the same step format the daily challenge uses.
+- Play it yourself or send it to friends as a share code with a "beat my time" challenge.
+- Tracks must be finished by their creator (or vetted by the autopilot) before they can be shared.
+- The editor and playing shared tracks are free; rewarded ads unlock extras (advanced pieces, more save slots, ball material choice, your trail on your ghost).
+
+**Later**
+- Links that open shared tracks directly in the app (Android app links).
+- Featured community tracks (needs a server).
+- More campaign levels.
+
 ## Code
 - `js/physics.js` - ball physics, sphere-vs-box collisions, special surfaces (boost, jump, crumble, sweepers)
 - `js/track.js` - track builder (straight, ramp, corner, rails, gaps, moving platforms) and meshes
